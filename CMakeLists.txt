@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 2.8)
+project( spt )
+find_package( OpenCV REQUIRED )
+add_executable( spt spt.cpp )
+target_link_libraries( spt ${OpenCV_LIBS} netcdf )
