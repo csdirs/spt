@@ -1,25 +1,6 @@
-#include <iostream>
-#include <opencv2/opencv.hpp>
-#include <netcdf.h>
-
-using namespace cv;
-using namespace std;
+#include "spt.h"
 
 #define DATAPATH "/cephfs/fhs/data/in/acspo/www.star.nesdis.noaa.gov/pub/sod/sst/micros_data/acspo_nc/npp/2014-07-10/ACSPO_V2.30_NPP_VIIRS_2014-07-10_1230-1240_20140713.061812.nc"
-
-void
-ncfatal(int n)
-{
-	cerr << "Error: " << nc_strerror(n) << endl;
-	exit(2);
-}
-
-void
-fatal(string msg)
-{
-	cerr << msg << endl;
-	exit(2);
-}
 
 Mat
 readvar(int ncid, const char *name)
@@ -95,54 +76,6 @@ laplacian(Mat &src, Mat &dst)
 	filter2D(src, dst, -1, kern);
 }
 
-Mat
-unsort_float64(Mat &sind, Mat &img)
-{
-	Mat newimg;
-	int i, j, k;
-	int32_t *sp;
-	float *ip;
-
-	if(img.type() != CV_32FC1){
-		fatal("invalid img type");
-	}
-	newimg = Mat::zeros(img.rows, img.cols, CV_64F);
-	sp = (int32_t*)sind.data;
-	ip = (float*)img.data;
-	k = 0;
-	for(i = 0; i < newimg.rows; i++){
-		for(j = 0; j < newimg.cols; j++){
-			newimg.at<double>(sp[k], j) = ip[k];
-			k++;
-		}
-	}
-	return newimg;
-}
-
-Mat
-sort_float64(Mat &sind, Mat &img)
-{
-	Mat newimg;
-	int i, j, k;
-	int32_t *sp;
-	double *np;
-
-	if(img.type() != CV_32FC1){
-		fatal("invalid img type");
-	}
-	newimg = Mat::zeros(img.rows, img.cols, CV_64F);
-	sp = (int32_t*)sind.data;
-	np = (double*)newimg.data;
-	k = 0;
-	for(i = 0; i < newimg.rows; i++){
-		for(j = 0; j < newimg.cols; j++){
-			np[k] = img.at<float>(sp[k], j);
-			k++;
-		}
-	}
-	return newimg;
-}
-
 int
 main(int argc, char **argv)
 {
@@ -163,7 +96,7 @@ main(int argc, char **argv)
 	}
 
 	sortIdx(lat, sind, CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);
-	sst = sort_float64(sind, sst);
+	sst = resample_sort(sind, sst);
 
 	elem = getStructuringElement(MORPH_RECT, Size(3, 3), Point(1, 1));
 	dilate(sst, sstdil, elem);
