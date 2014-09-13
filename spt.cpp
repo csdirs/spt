@@ -5,52 +5,43 @@
 Mat
 readvar(int ncid, const char *name)
 {
-	int i, varid, n, dimids[2];
+	int i, varid, n, dimids[2], cvt;
 	size_t shape[2];
+	nc_type nct;
 	Mat img;
 	
 	if(n = nc_open(DATAPATH, NC_NOWRITE, &ncid))
 		ncfatal(n);
 	if(n = nc_inq_varid(ncid, name, &varid))
 		ncfatal(n);
-	if(n = nc_inq_vardimid(ncid, varid, dimids))
+	if(n = nc_inq_var(ncid, varid, NULL, &nct, NULL, dimids, NULL))
 		ncfatal(n);
 	for(i = 0; i < 2; i++){
 		if(n = nc_inq_dimlen(ncid, dimids[i], &shape[i]))
 			ncfatal(n);
 	}
-	img = Mat::zeros(shape[0], shape[1], CV_32FC1);
-	if(n = nc_get_var_float(ncid, varid, (float*)img.data))
-		ncfatal(n);
-	return img;
-}
-
-void
-cmapImshow(string name, Mat &img, int cmap, double scale)
-{
-	double min, max;
-
-	minMaxLoc(img, &min, &max, NULL, NULL);
-	cout << name << " min: " << min << " max: " << max << endl;
-	cout << name << " type: " << img.type() << endl;
-
-	switch(img.type()){
-	case CV_16SC1:
-	case CV_32SC1:
+	switch(nct){
+	default:
+		fatal("unknown netcdf data type");
+		break;
+	case NC_BYTE:
+		img = Mat::zeros(shape[0], shape[1], CV_8SC1);
+		if(n = nc_get_var_schar(ncid, varid, (signed char*)img.data))
+			ncfatal(n);
+		break;
+	case NC_UBYTE:
+		img = Mat::zeros(shape[0], shape[1], CV_8UC1);
+		if(n = nc_get_var_uchar(ncid, varid, (unsigned char*)img.data))
+			ncfatal(n);
+		break;
+	case NC_FLOAT:
+		img = Mat::zeros(shape[0], shape[1], CV_32FC1);
+		if(n = nc_get_var_float(ncid, varid, (float*)img.data))
+			ncfatal(n);
 		img.convertTo(img, CV_64F);
-		// fallthrough
-	case CV_32FC1:
-	case CV_64FC1:
-		img -= min;
-		img.convertTo(img, CV_8U, 255.0/(max-min));
 		break;
 	}
-	//resize(img, tmp2, Size(), scale, scale);
-	applyColorMap(img, img, cmap);
-
-	//namedWindow(name, WINDOW_AUTOSIZE);
-	namedWindow(name, CV_WINDOW_NORMAL|CV_WINDOW_KEEPRATIO);
-	imshow(name, img);
+	return img;
 }
 
 void
@@ -80,6 +71,7 @@ int
 main(int argc, char **argv)
 {
 	Mat sst, lat, elem, sstdil, sstero, rfilt, sstlap, sind;
+	Mat acspo, landmask, interpsst;
 	float *p, *q;
 	int i, ncid, n;
 
@@ -87,16 +79,11 @@ main(int argc, char **argv)
 		ncfatal(n);
 	sst = readvar(ncid, "sst_regression");
 	lat = readvar(ncid, "latitude");
+	acspo = readvar(ncid, "acspo_mask");
 	if(n = nc_close(ncid))
 		ncfatal(n);
 
-	if(sst.empty()){	// Check for invalid input
-		cout <<  "could not read data" << std::endl ;
-		return -1;
-	}
-
-	sortIdx(lat, sind, CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);
-	sst = resample_sort(sind, sst);
+	interpsst = resample_float64(sst, lat, acspo);
 
 	elem = getStructuringElement(MORPH_RECT, Size(3, 3), Point(1, 1));
 	dilate(sst, sstdil, elem);
@@ -107,10 +94,11 @@ main(int argc, char **argv)
 
 	clipsst(rfilt);
 
-	cmapImshow("SST", sst, COLORMAP_JET, 0.2);
-	cmapImshow("Rangefilt SST", rfilt, COLORMAP_JET, 0.2);
-	cmapImshow("Laplacian SST", sstlap, COLORMAP_JET, 0.2);
-	cmapImshow("SortIdx Lat", sind, COLORMAP_JET, 0.2);
+	cmapImshow("SST", sst, COLORMAP_JET);
+	cmapImshow("Rangefilt SST", rfilt, COLORMAP_JET);
+	cmapImshow("Laplacian SST", sstlap, COLORMAP_JET);
+	cmapImshow("acspo", acspo, COLORMAP_JET);
+	cmapImshow("interpsst", interpsst, COLORMAP_JET);
 	//namedWindow("SortIdx SST", CV_WINDOW_NORMAL|CV_WINDOW_KEEPRATIO);
 	//imshow("SortIdx SST", sind);
 	while(waitKey(0) != 'q')
