@@ -94,11 +94,11 @@ main(int argc, char **argv)
 
 	clipsst(rfilt);
 
-	cmapImshow("SST", sst, COLORMAP_JET);
-	cmapImshow("Rangefilt SST", rfilt, COLORMAP_JET);
-	cmapImshow("Laplacian SST", sstlap, COLORMAP_JET);
-	cmapImshow("acspo", acspo, COLORMAP_JET);
-	cmapImshow("interpsst", interpsst, COLORMAP_JET);
+	cmapimshow("SST", sst, COLORMAP_JET);
+	cmapimshow("Rangefilt SST", rfilt, COLORMAP_JET);
+	cmapimshow("Laplacian SST", sstlap, COLORMAP_JET);
+	cmapimshow("acspo", acspo, COLORMAP_JET);
+	cmapimshow("interpsst", interpsst, COLORMAP_JET);
 	//namedWindow("SortIdx SST", CV_WINDOW_NORMAL|CV_WINDOW_KEEPRATIO);
 	//imshow("SortIdx SST", sind);
 	while(waitKey(0) != 'q')

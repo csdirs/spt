@@ -14,8 +14,37 @@ fatal(string msg)
 	exit(2);
 }
 
+string
+type2str(int type) {
+  string r;
+
+  switch(type & CV_MAT_DEPTH_MASK){
+    default:     r = "User"; break;
+    case CV_8U:  r = "8U"; break;
+    case CV_8S:  r = "8S"; break;
+    case CV_16U: r = "16U"; break;
+    case CV_16S: r = "16S"; break;
+    case CV_32S: r = "32S"; break;
+    case CV_32F: r = "32F"; break;
+    case CV_64F: r = "64F"; break;
+  }
+  r += "C";
+  r += (1 + (type >> CV_CN_SHIFT)) + '0';
+  return r;
+}
+
 void
-cmapImshow(string name, Mat &img, int cmap)
+checktype(Mat &mat, string name, int type){
+	if(mat.type() != type){
+		cerr << "type of Mat " << name
+			<< " expected " << type2str(type)
+			<< ", got " << type2str(mat.type()) << endl;
+		exit(2);
+	}
+}
+
+void
+cmapimshow(string name, Mat &img, int cmap)
 {
 	double min, max;
 
@@ -24,6 +53,9 @@ cmapImshow(string name, Mat &img, int cmap)
 	cout << name << " type: " << img.type() << endl;
 
 	switch(img.type()){
+	default:
+		fatal("unkown Mat type");
+		break;
 	case CV_8SC1:
 	case CV_8UC1:
 	case CV_16SC1:

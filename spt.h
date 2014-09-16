@@ -28,4 +28,6 @@ Mat resample_float64(Mat &img, Mat &lat, Mat &acspo);
 // utils.cpp
 void ncfatal(int n);
 void fatal(string msg);
-void cmapImshow(string name, Mat &img, int cmap);
+string type2str(int type);
+void checktype(Mat &mat, string name, int type);
+void cmapimshow(string name, Mat &img, int cmap);
