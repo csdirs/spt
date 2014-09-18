@@ -5,6 +5,8 @@
 using namespace cv;
 using namespace std;
 
+#define SQ(x) ((x)*(x))
+
 enum {
 	MaskInvalid       = (1<<0),    		// or Valid
 	MaskDay           = (1<<1),         // or Night
