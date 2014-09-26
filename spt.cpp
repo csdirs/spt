@@ -145,6 +145,41 @@ localmax(Mat &gradmag, Mat &high, Mat &low, int sigma)
 	}
 }
 
+void
+dumpmat(const char *filename, Mat &m)
+{
+	int n;
+	FILE *f;
+
+	if(!m.isContinuous()){
+		fatal("m not continuous");
+	}
+	f = fopen(filename, "w");
+	if(!f){
+		fatal("open failed");
+	}
+	printf("rows=%d, cols=%d, elemSize=%ld\n", m.rows, m.cols, m.elemSize());
+	n = fwrite(m.data, m.elemSize1(), m.rows*m.cols, f);
+	if(n != m.rows*m.cols){
+		fclose(f);
+		printf("wrote %d items\n", n);
+		fatal("write failed");
+	}
+	fclose(f);
+}
+
+void
+logprint(const char *msg)
+{
+	time_t now;
+	char *t;
+
+	time(&now);
+	t = ctime(&now);
+	// omit '\n' from time when printing
+	printf("%.*s %s\n", (int)strlen(t)-1, t, msg);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -153,6 +188,7 @@ main(int argc, char **argv)
 	float *p, *q;
 	int i, ncid, n;
 
+	logprint("reading data...");
 	if(n = nc_open(DATAPATH, NC_NOWRITE, &ncid))
 		ncfatal(n);
 	sst = readvar(ncid, "sst_regression");
@@ -161,19 +197,34 @@ main(int argc, char **argv)
 	if(n = nc_close(ncid))
 		ncfatal(n);
 
+	logprint("resample...");
 	interpsst = resample_float64(sst, lat, acspo);
 
+	logprint("dilate...");
 	elem = getStructuringElement(MORPH_RECT, Size(3, 3), Point(1, 1));
 	dilate(interpsst, sstdil, elem);
+	logprint("erode...");
 	erode(interpsst, sstero, elem);
+	logprint("rangefilt...");
 	subtract(sstdil, sstero, rfilt);
 
+	logprint("laplacian...");
 	laplacian(interpsst, sstlap);
 
+	logprint("gradmag...");
 	gradientmag(interpsst, gradmag);
+	logprint("localmax...");
 	localmax(gradmag, high, low, 1);
-	clipsst(rfilt);
 
+	logprint("saving output...");
+	dumpmat("interpsst.bin", interpsst);
+	dumpmat("gradmag.bin", gradmag);
+	dumpmat("high.bin", high);
+	dumpmat("low.bin", low);
+
+	logprint("done...");
+	/*
+	clipsst(rfilt);
 	cmapimshow("SST", sst, COLORMAP_JET);
 	cmapimshow("Rangefilt SST", rfilt, COLORMAP_JET);
 	cmapimshow("Laplacian SST", sstlap, COLORMAP_JET);
@@ -182,10 +233,11 @@ main(int argc, char **argv)
 	cmapimshow("gradmag", gradmag, COLORMAP_JET);
 	cmapimshow("high", high, COLORMAP_JET);
 	cmapimshow("low", low, COLORMAP_JET);
+	*/
 	//namedWindow("SortIdx SST", CV_WINDOW_NORMAL|CV_WINDOW_KEEPRATIO);
 	//imshow("SortIdx SST", sind);
-	while(waitKey(0) != 'q')
-		;
+	//while(waitKey(0) != 'q')
+	//	;
 
 	return 0;
 }

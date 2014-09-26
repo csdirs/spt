@@ -1,6 +1,7 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
 #include <netcdf.h>
+#include <stdio.h>
 
 using namespace cv;
 using namespace std;
