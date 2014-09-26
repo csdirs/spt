@@ -50,17 +50,62 @@ resample_sort(Mat &sind, Mat &img, int type)
 
 #define ISNAN(x) ((x) != (x))
 
-// TODO: median filter?
+static double
+median3(double a, double b, double c)
+{
+	if(a <= b){
+		if(c < a)
+			return a;
+		if(b < c)
+			return b;
+		return c;
+	}
+	// b < a
+	if(c < b)
+		return b;
+	if(a < c)
+		return a;
+	return c;
+}
+
+// Median filter of image 'in' with a window of 3x1.
+static void
+medfilt3(Mat &in, Mat &out)
+{
+	int i, j, rows, cols;
+	double *ip, *op;
+
+	CV_Assert(in.type() == CV_64FC1);
+	rows = in.rows;
+	cols = in.cols;
+
+	out.create(rows, cols, CV_64FC1);
+	in.row(0).copyTo(out.row(0));
+	in.row(rows-1).copyTo(out.row(rows-1));
+
+	for(i = 1; i < rows-1; i++){
+		ip = in.ptr<double>(i);
+		op = out.ptr<double>(i);
+		for(j = 0; j < cols; j++){
+			// TODO: check for NaN?
+			op[j] = median3(ip[j-cols], ip[j], ip[j+cols]);
+		}
+	}
+}
+
 Mat
 resample_interp(Mat &simg, Mat &slat, Mat &slandmask)
 {
 	int i, j, k, nbuf, *buf;
-	Mat newimg, bufmat;
+	Mat newimg, bufmat, tmpmat;
 	double x, llat, rlat, lval, rval;
 
 	checktype(simg, "resample_interp:simg", CV_64FC1);
 	checktype(slat, "resample_interp:slat", CV_64FC1);
 	checktype(slandmask, "resample_interp:slandmask", CV_8UC1);
+
+	medfilt3(simg, tmpmat);
+	simg = tmpmat;
 
 	newimg = simg.clone();
 	bufmat = Mat::zeros(simg.rows, 1, CV_32SC1);
