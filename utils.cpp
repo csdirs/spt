@@ -76,3 +76,27 @@ cmapimshow(string name, Mat &img, int cmap)
 	namedWindow(name, CV_WINDOW_NORMAL|CV_WINDOW_KEEPRATIO);
 	imshow(name, img);
 }
+
+void
+dumpmat(const char *filename, Mat &m)
+{
+	int n;
+	FILE *f;
+
+	if(!m.isContinuous()){
+		fatal("m not continuous");
+	}
+	f = fopen(filename, "w");
+	if(!f){
+		fatal("open failed");
+	}
+	printf("rows=%d, cols=%d, elemSize=%ld\n", m.rows, m.cols, m.elemSize());
+	n = fwrite(m.data, m.elemSize1(), m.rows*m.cols, f);
+	if(n != m.rows*m.cols){
+		fclose(f);
+		printf("wrote %d items\n", n);
+		fatal("write failed");
+	}
+	fclose(f);
+}
+

@@ -50,9 +50,17 @@ resample_sort(Mat &sind, Mat &img, int type)
 
 #define ISNAN(x) ((x) != (x))
 
+// Returns the median of 3 consecutive values.
+// b is the target, a is the left neighbor and
+// c is the right neighbor.
 static double
 median3(double a, double b, double c)
 {
+	if(isnan(b))
+		return NAN;
+	if(isnan(a) || isnan(c))
+		return b;
+
 	if(a <= b){
 		if(c < a)
 			return a;
@@ -68,14 +76,26 @@ median3(double a, double b, double c)
 	return c;
 }
 
-// Median filter of image 'in' with a window of 3x1.
-static void
-medfilt3(Mat &in, Mat &out)
+static double
+avg3(double a, double b, double c)
 {
-	int i, j, rows, cols;
+	if(isnan(b))
+		return NAN;
+	if(isnan(a) || isnan(c))
+		return b;
+	return (a+b+c)/3.0;
+}
+
+// Average filter of image 'in' with a window of 3x1
+// where sorted order is not the same as the origial order.
+static void
+avgfilter3(Mat &in, Mat &out, Mat &sind)
+{
+	int i, j, rows, cols, *sindp;
 	double *ip, *op;
 
 	CV_Assert(in.type() == CV_64FC1);
+	CV_Assert(sind.type() == CV_32SC1);
 	rows = in.rows;
 	cols = in.cols;
 
@@ -86,9 +106,15 @@ medfilt3(Mat &in, Mat &out)
 	for(i = 1; i < rows-1; i++){
 		ip = in.ptr<double>(i);
 		op = out.ptr<double>(i);
+		sindp = sind.ptr<int>(i);
 		for(j = 0; j < cols; j++){
-			// TODO: check for NaN?
-			op[j] = median3(ip[j-cols], ip[j], ip[j+cols]);
+			if(sindp[j] != i){
+				if(j == 1600){
+					printf("i=%d, j=%d, sortind=%d\n", i, j, sindp[j]);
+				}
+				op[j] = avg3(ip[j-cols], ip[j], ip[j+cols]);
+			}else
+				op[j] = ip[j];
 		}
 	}
 }
@@ -97,15 +123,12 @@ Mat
 resample_interp(Mat &simg, Mat &slat, Mat &slandmask)
 {
 	int i, j, k, nbuf, *buf;
-	Mat newimg, bufmat, tmpmat;
+	Mat newimg, bufmat;
 	double x, llat, rlat, lval, rval;
 
 	checktype(simg, "resample_interp:simg", CV_64FC1);
 	checktype(slat, "resample_interp:slat", CV_64FC1);
 	checktype(slandmask, "resample_interp:slandmask", CV_8UC1);
-
-	medfilt3(simg, tmpmat);
-	simg = tmpmat;
 
 	newimg = simg.clone();
 	bufmat = Mat::zeros(simg.rows, 1, CV_32SC1);
@@ -161,14 +184,21 @@ resample_interp(Mat &simg, Mat &slat, Mat &slandmask)
 Mat
 resample_float64(Mat &img, Mat &lat, Mat &acspo)
 {
-	Mat sind, landmask;
+	Mat sind, landmask, tmpmat;
 
 	checktype(img, "resample_float64:img", CV_64FC1);
 	checktype(lat, "resample_float64:lat", CV_64FC1);
 	checktype(acspo, "resample_float64:acspo", CV_8UC1);
 
 	sortIdx(lat, sind, CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);
+	dumpmat("sortind.bin", sind);
+
 	img = resample_sort<double>(sind, img, CV_64FC1);
+	dumpmat("sortsst.bin", img);
+	avgfilter3(img, tmpmat, sind);
+	img = tmpmat;
+	dumpmat("medfiltsst.bin", img);
+
 	lat = resample_sort<double>(sind, lat, CV_64FC1);
 	acspo = resample_sort<unsigned char>(sind, acspo, CV_8UC1);
 	landmask = (acspo & MaskLand) != 0;
