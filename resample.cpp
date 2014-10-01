@@ -48,34 +48,6 @@ resample_sort(Mat &sind, Mat &img, int type)
 	return newimg;
 }
 
-#define ISNAN(x) ((x) != (x))
-
-// Returns the median of 3 consecutive values.
-// b is the target, a is the left neighbor and
-// c is the right neighbor.
-static double
-median3(double a, double b, double c)
-{
-	if(isnan(b))
-		return NAN;
-	if(isnan(a) || isnan(c))
-		return b;
-
-	if(a <= b){
-		if(c < a)
-			return a;
-		if(b < c)
-			return b;
-		return c;
-	}
-	// b < a
-	if(c < b)
-		return b;
-	if(a < c)
-		return a;
-	return c;
-}
-
 static double
 avg3(double a, double b, double c)
 {
@@ -141,7 +113,7 @@ resample_interp(Mat &simg, Mat &slat, Mat &slandmask)
 			}
 
 			// valid pixel
-			if(!ISNAN(simg.at<double>(i, j))){
+			if(!isnan(simg.at<double>(i, j))){
 				// first pixel is not valid, so extrapolate
 				if(llat == -999){
 					for(k = 0; k < nbuf; k++){
