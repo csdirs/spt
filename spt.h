@@ -34,4 +34,7 @@ void fatal(string msg);
 string type2str(int type);
 void checktype(Mat &mat, string name, int type);
 void cmapimshow(string name, Mat &img, int cmap);
+
+// io.cpp
 void dumpmat(const char *filename, Mat &m);
+Mat readvar(int ncid, const char *name);

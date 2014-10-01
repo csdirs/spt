@@ -9,9 +9,10 @@ LDFLAGS = -lnetcdf\
 	-lopencv_contrib
 
 OFILES = \
+	utils.o\
+	io.o\
 	resample.o\
 	spt.o\
-	utils.o\
 
 HFILES = spt.h
 
