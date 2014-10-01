@@ -6,19 +6,23 @@
 Mat
 readvar(int ncid, const char *name)
 {
-	int i, varid, n, dimids[2], cvt;
+	int i, varid, n, dimids[2];
 	size_t shape[2];
 	nc_type nct;
 	Mat img;
 	
-	if(n = nc_open(DATAPATH, NC_NOWRITE, &ncid))
+	n = nc_open(DATAPATH, NC_NOWRITE, &ncid);
+	if(n != NC_NOERR)
 		ncfatal(n);
-	if(n = nc_inq_varid(ncid, name, &varid))
+	n = nc_inq_varid(ncid, name, &varid);
+	if(n != NC_NOERR)
 		ncfatal(n);
-	if(n = nc_inq_var(ncid, varid, NULL, &nct, NULL, dimids, NULL))
+	n = nc_inq_var(ncid, varid, NULL, &nct, NULL, dimids, NULL);
+	if(n != NC_NOERR)
 		ncfatal(n);
 	for(i = 0; i < 2; i++){
-		if(n = nc_inq_dimlen(ncid, dimids[i], &shape[i]))
+		n = nc_inq_dimlen(ncid, dimids[i], &shape[i]);
+		if(n != NC_NOERR)
 			ncfatal(n);
 	}
 	switch(nct){
@@ -27,17 +31,20 @@ readvar(int ncid, const char *name)
 		break;
 	case NC_BYTE:
 		img = Mat::zeros(shape[0], shape[1], CV_8SC1);
-		if(n = nc_get_var_schar(ncid, varid, (signed char*)img.data))
+		n = nc_get_var_schar(ncid, varid, (signed char*)img.data);
+		if(n != NC_NOERR)
 			ncfatal(n);
 		break;
 	case NC_UBYTE:
 		img = Mat::zeros(shape[0], shape[1], CV_8UC1);
-		if(n = nc_get_var_uchar(ncid, varid, (unsigned char*)img.data))
+		n = nc_get_var_uchar(ncid, varid, (unsigned char*)img.data);
+		if(n != NC_NOERR)
 			ncfatal(n);
 		break;
 	case NC_FLOAT:
 		img = Mat::zeros(shape[0], shape[1], CV_32FC1);
-		if(n = nc_get_var_float(ncid, varid, (float*)img.data))
+		n = nc_get_var_float(ncid, varid, (float*)img.data);
+		if(n != NC_NOERR)
 			ncfatal(n);
 		img.convertTo(img, CV_64F);
 		break;
@@ -52,7 +59,7 @@ clipsst(Mat &sst)
 	int i;
 
 	p = (float*)sst.data;
-	for(i = 0; i < sst.total(); i++){
+	for(i = 0; i < (int)sst.total(); i++){
 		if(p[i] > 1000 || p[i] < -1000)
 			p[i] = NAN;
 	}
@@ -171,16 +178,17 @@ main(int argc, char **argv)
 	Mat sst, lat, elem, sstdil, sstero, rfilt, sstlap, sind;
 	Mat acspo, landmask, interpsst, gradmag, high, low;
 	Mat avgsst;
-	float *p, *q;
-	int i, ncid, n;
+	int ncid, n;
 
 	logprint("reading data...");
-	if(n = nc_open(DATAPATH, NC_NOWRITE, &ncid))
+	n = nc_open(DATAPATH, NC_NOWRITE, &ncid);
+	if(n != NC_NOERR)
 		ncfatal(n);
 	sst = readvar(ncid, "sst_regression");
 	lat = readvar(ncid, "latitude");
 	acspo = readvar(ncid, "acspo_mask");
-	if(n = nc_close(ncid))
+	n = nc_close(ncid);
+	if(n != NC_NOERR)
 		ncfatal(n);
 
 	logprint("resample...");
