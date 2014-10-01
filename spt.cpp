@@ -69,6 +69,14 @@ laplacian(Mat &src, Mat &dst)
 }
 
 void
+avgfilter(Mat &src, Mat &dst, int ksize)
+{
+	Mat kern = Mat::ones(ksize, ksize, CV_64FC1);
+	kern *= 1.0/(ksize*ksize);
+	filter2D(src, dst, -1, kern);
+}
+
+void
 gradientmag(Mat &img, Mat &gm)
 {
     Mat h = (Mat_<double>(5,1) <<
@@ -162,6 +170,7 @@ main(int argc, char **argv)
 {
 	Mat sst, lat, elem, sstdil, sstero, rfilt, sstlap, sind;
 	Mat acspo, landmask, interpsst, gradmag, high, low;
+	Mat avgsst;
 	float *p, *q;
 	int i, ncid, n;
 
@@ -177,6 +186,20 @@ main(int argc, char **argv)
 	logprint("resample...");
 	interpsst = resample_float64(sst, lat, acspo);
 
+	avgfilter(interpsst, avgsst, 7);
+	logprint("gradmag...");
+	gradientmag(interpsst, gradmag);
+
+	//D = interpsst - avgsst;
+	//(interpsst < 270) | 
+	// threshold (sst-avgsst) by 1
+
+
+	dumpmat("interpsst.bin", interpsst);
+	dumpmat("avgsst.bin", avgsst);
+
+
+/*
 	logprint("dilate...");
 	elem = getStructuringElement(MORPH_RECT, Size(3, 3), Point(1, 1));
 	dilate(interpsst, sstdil, elem);
@@ -188,21 +211,17 @@ main(int argc, char **argv)
 	logprint("laplacian...");
 	laplacian(interpsst, sstlap);
 
-	logprint("gradmag...");
-	gradientmag(interpsst, gradmag);
 	logprint("localmax...");
 	localmax(gradmag, high, low, 1);
 
 	logprint("saving output...");
-	dumpmat("interpsst.bin", interpsst);
 	dumpmat("gradmag.bin", gradmag);
 	dumpmat("high.bin", high);
 	dumpmat("low.bin", low);
 
 	logprint("done...");
-	/*
+
 	clipsst(rfilt);
-	cmapimshow("SST", sst, COLORMAP_JET);
 	cmapimshow("Rangefilt SST", rfilt, COLORMAP_JET);
 	cmapimshow("Laplacian SST", sstlap, COLORMAP_JET);
 	cmapimshow("acspo", acspo, COLORMAP_JET);
@@ -210,11 +229,17 @@ main(int argc, char **argv)
 	cmapimshow("gradmag", gradmag, COLORMAP_JET);
 	cmapimshow("high", high, COLORMAP_JET);
 	cmapimshow("low", low, COLORMAP_JET);
-	*/
-	//namedWindow("SortIdx SST", CV_WINDOW_NORMAL|CV_WINDOW_KEEPRATIO);
-	//imshow("SortIdx SST", sind);
-	//while(waitKey(0) != 'q')
-	//	;
+
+	namedWindow("SortIdx SST", CV_WINDOW_NORMAL|CV_WINDOW_KEEPRATIO);
+	imshow("SortIdx SST", sind);
+*/
+/*
+	cmapimshow("SST", interpsst, COLORMAP_JET);
+	cmapimshow("blur(SSt)", blursst, COLORMAP_JET);
+
+	while(waitKey(0) != 'q')
+		;
+*/
 
 	return 0;
 }

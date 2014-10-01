@@ -108,12 +108,9 @@ avgfilter3(Mat &in, Mat &out, Mat &sind)
 		op = out.ptr<double>(i);
 		sindp = sind.ptr<int>(i);
 		for(j = 0; j < cols; j++){
-			if(sindp[j] != i){
-				if(j == 1600){
-					printf("i=%d, j=%d, sortind=%d\n", i, j, sindp[j]);
-				}
+			if(sindp[j] != i)
 				op[j] = avg3(ip[j-cols], ip[j], ip[j+cols]);
-			}else
+			else
 				op[j] = ip[j];
 		}
 	}
@@ -191,13 +188,13 @@ resample_float64(Mat &img, Mat &lat, Mat &acspo)
 	checktype(acspo, "resample_float64:acspo", CV_8UC1);
 
 	sortIdx(lat, sind, CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);
-	dumpmat("sortind.bin", sind);
+//dumpmat("sortind.bin", sind);
 
 	img = resample_sort<double>(sind, img, CV_64FC1);
-	dumpmat("sortsst.bin", img);
+//dumpmat("sortsst.bin", img);
 	avgfilter3(img, tmpmat, sind);
 	img = tmpmat;
-	dumpmat("medfiltsst.bin", img);
+//dumpmat("medfiltsst.bin", img);
 
 	lat = resample_sort<double>(sind, lat, CV_64FC1);
 	acspo = resample_sort<unsigned char>(sind, acspo, CV_8UC1);
