@@ -30,7 +30,7 @@ Mat resample_float64(Mat &img, Mat &lat, Mat &acspo);
 
 // utils.cpp
 void eprintf(const char *fmt, ...);
-char *type2str(int type);
+const char *type2str(int type);
 void cmapimshow(string name, Mat &img, int cmap);
 
 // io.cpp

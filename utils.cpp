@@ -28,29 +28,19 @@ estrdup(const char *s)
 	return dup;
 }
 
-char*
+const char*
 type2str(int type)
 {
-	int n;
-	const char *dp;
-	char cn, r[10];
-	
-	switch(type & CV_MAT_DEPTH_MASK){
-	default: dp = "User"; break;
-	case CV_8U:  dp = "8U"; break;
-	case CV_8S:  dp = "8S"; break;
-	case CV_16U: dp = "16U"; break;
-	case CV_16S: dp = "16S"; break;
-	case CV_32S: dp = "32S"; break;
-	case CV_32F: dp = "32F"; break;
-	case CV_64F: dp = "64F"; break;
+	switch(type){
+	default:       return "UnknownType"; break;
+	case CV_8UC1:  return "CV_8UC1"; break;
+	case CV_8SC1:  return "CV_8SC1"; break;
+	case CV_16UC1: return "CV_16UC1"; break;
+	case CV_16SC1: return "CV_16SC1"; break;
+	case CV_32SC1: return "CV_32SC1"; break;
+	case CV_32FC1: return "CV_32FC1"; break;
+	case CV_64FC1: return "CV_64FC1"; break;
 	}
-	cn = (1 + (type >> CV_CN_SHIFT)) + '0';
-	
-	n = snprintf(r, sizeof(r)-1, "%sC%c", dp, cn);
-	r[n] = '\0';
-	
-	return estrdup(r);
 }
 
 void

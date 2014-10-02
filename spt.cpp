@@ -143,7 +143,9 @@ main(int argc, char **argv)
 
 	logprint("resample...");
 	interpsst = resample_float64(sst, lat, acspo);
+	dumpmat("interpsst.bin", interpsst);
 
+/*
 	avgfilter(interpsst, avgsst, 7);
 	logprint("gradmag...");
 	gradientmag(interpsst, gradmag);
@@ -153,9 +155,8 @@ main(int argc, char **argv)
 	// threshold (sst-avgsst) by 1
 
 
-	dumpmat("interpsst.bin", interpsst);
 	dumpmat("avgsst.bin", avgsst);
-
+*/
 
 /*
 	logprint("dilate...");
