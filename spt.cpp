@@ -152,9 +152,8 @@ main(int argc, char **argv)
 	int ncid, n;
 	char *path;
 
-	if(argc != 2){
+	if(argc != 2)
 		eprintf("usage: %s granule\n", argv[0]);
-	}
 	path = argv[1];
 	
 	printf("saving in %s\n", savefilename(path));

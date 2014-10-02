@@ -164,7 +164,7 @@ argsortlat(Mat &lat, int swathsize, Mat &sortidx)
 {
 	int i, j, off, width, height, dir, d;
 	Pole pole;
-	Mat col, idx, A, B;
+	Mat col, idx, botidx;
 	Range colrg, toprg, botrg;
 	
 	CV_Assert(lat.type() == CV_64FC1);
@@ -208,7 +208,7 @@ argsortlat(Mat &lat, int swathsize, Mat &sortidx)
 		}
 		if(i >= height)
 			pole = NOPOLE;
-//printf("j = %4d, pole = %d\n", j, pole);
+//printf("j = %4d, pole = %d, split = %d\n", j, pole, i);
 		colrg = Range(j, j+1);
 		toprg = Range(0, i);
 		botrg = Range(i, height);
@@ -222,16 +222,20 @@ argsortlat(Mat &lat, int swathsize, Mat &sortidx)
 				sortIdx(col, sortidx.col(j), CV_SORT_EVERY_COLUMN + CV_SORT_DESCENDING);
 			break;
 		case NORTHPOLE:
+			botidx = sortidx(botrg, colrg);
 			sortIdx(col.rowRange(toprg), sortidx(toprg, colrg),
 				CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);
-			sortIdx(col.rowRange(botrg), sortidx(botrg, colrg),
+			sortIdx(col.rowRange(botrg), botidx,
 				CV_SORT_EVERY_COLUMN + CV_SORT_DESCENDING);
+			botidx += i;
 			break;
 		case SOUTHPOLE:
+			botidx = sortidx(botrg, colrg);
 			sortIdx(col.rowRange(toprg), sortidx(toprg, colrg),
 				CV_SORT_EVERY_COLUMN + CV_SORT_DESCENDING);
-			sortIdx(col.rowRange(botrg), sortidx(botrg, colrg),
+			sortIdx(col.rowRange(botrg), botidx,
 				CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);
+			botidx += i;
 			break;
 		}
 	}
@@ -247,8 +251,10 @@ resample_float64(Mat &img, Mat &lat, Mat &acspo)
 	CV_Assert(acspo.type() == CV_8UC1);
 
 	//sortIdx(lat, sind, CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);
-	argsortlat(lat, 10, sind);
+	argsortlat(lat, VIIRS_SWATH_SIZE, sind);
 //dumpmat("sortind.bin", sind);
+//cmapimshow("lat", lat, COLORMAP_JET);
+//cmapimshow("Sort ind", sind, COLORMAP_JET);
 
 	img = resample_sort<double>(sind, img, CV_64FC1);
 //dumpmat("sortsst.bin", img);
@@ -257,6 +263,7 @@ resample_float64(Mat &img, Mat &lat, Mat &acspo)
 //dumpmat("medfiltsst.bin", img);
 
 	lat = resample_sort<double>(sind, lat, CV_64FC1);
+//cmapimshow("Sorted lat", lat, COLORMAP_JET);
 	acspo = resample_sort<unsigned char>(sind, acspo, CV_8UC1);
 	landmask = (acspo & MaskLand) != 0;
 

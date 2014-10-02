@@ -50,6 +50,7 @@ gray2rgb(Mat &src, Mat &dst, int cmap)
 
 	minMaxLoc(src, &min, &max, NULL, NULL);
 
+	dst = src.clone();
 	switch(src.type()){
 	default:
 		eprintf("unkown Mat type %s", type2str(src.type()));
@@ -59,25 +60,27 @@ gray2rgb(Mat &src, Mat &dst, int cmap)
 	case CV_16SC1:
 	case CV_16UC1:
 	case CV_32SC1:
-		src.convertTo(src, CV_64F);
+		dst.convertTo(dst, CV_64F);
 		// fallthrough
 	case CV_32FC1:
 	case CV_64FC1:
-		src -= min;
-		src.convertTo(src, CV_8U, 255.0/(max-min));
+		dst -= min;
+		dst.convertTo(dst, CV_8U, 255.0/(max-min));
 		break;
 	}
-	//resize(src, tmp2, Size(), scale, scale);
-	applyColorMap(src, dst, cmap);
+	//resize(dst, tmp2, Size(), scale, scale);
+	applyColorMap(dst, dst, cmap);
 }
 
 
 void
 cmapimshow(string name, Mat &img, int cmap)
 {
-	gray2rgb(img, img, cmap);
+	Mat rgb;
+	
+	gray2rgb(img, rgb, cmap);
 
 	//namedWindow(name, WINDOW_AUTOSIZE);
 	namedWindow(name, CV_WINDOW_NORMAL|CV_WINDOW_KEEPRATIO);
-	imshow(name, img);
+	imshow(name, rgb);
 }

@@ -26,6 +26,11 @@ enum {
 	MaskCloudInvalid  = (1<<7)|(1<<6),  // 3 - Irrelevant to SST (which includes land, ice and invalid pixels)
 };
 
+enum {
+	VIIRS_SWATH_SIZE = 16,
+	MODIS_SWATH_SIZE = 10,
+};
+
 // resample.cpp
 Mat resample_interp(Mat &slat, Mat &simg, Mat &slandmask);
 Mat resample_float64(Mat &img, Mat &lat, Mat &acspo);
