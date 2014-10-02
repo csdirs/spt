@@ -19,7 +19,7 @@ HFILES = spt.h
 $(PROG): $(OFILES)
 	$(LD) -o $(PROG) $(OFILES) $(LDFLAGS)
 
-%.o: %.c $(HFILES)
+%.o: %.cpp $(HFILES)
 	$(CXX) -c $(CXXFLAGS) $<
 
 clean:

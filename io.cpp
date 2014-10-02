@@ -67,3 +67,9 @@ dumpmat(const char *filename, Mat &m)
 	}
 	fclose(f);
 }
+
+void
+ncfatal(int n)
+{
+	eprintf("%s\n", nc_strerror(n));
+}

@@ -30,13 +30,11 @@ Mat resample_interp(Mat &slat, Mat &simg, Mat &slandmask);
 Mat resample_float64(Mat &img, Mat &lat, Mat &acspo);
 
 // utils.cpp
-void ncfatal(int n);
 void eprintf(const char *fmt, ...);
-void fatal(string msg);
 char *type2str(int type);
-void checktype(Mat &mat, string name, int type);
 void cmapimshow(string name, Mat &img, int cmap);
 
 // io.cpp
 void dumpmat(const char *filename, Mat &m);
 Mat readvar(int ncid, const char *name);
+void ncfatal(int n);

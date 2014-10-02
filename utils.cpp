@@ -1,13 +1,6 @@
 #include "spt.h"
 
 void
-ncfatal(int n)
-{
-	cerr << "Error: " << nc_strerror(n) << endl;
-	exit(2);
-}
-
-void
 eprintf(const char *fmt, ...)
 {
 	va_list args;
@@ -58,16 +51,6 @@ type2str(int type)
 	r[n] = '\0';
 	
 	return estrdup(r);
-}
-
-void
-checktype(Mat &mat, string name, int type){
-	if(mat.type() != type){
-		cerr << "type of Mat " << name
-			<< " expected " << type2str(type)
-			<< ", got " << type2str(mat.type()) << endl;
-		exit(2);
-	}
 }
 
 void

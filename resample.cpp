@@ -8,8 +8,8 @@ resample_unsort(Mat &sind, Mat &img)
 	int32_t *sp;
 	double *ip;
 
-	checktype(sind, "resample_unsort:sind", CV_32SC1);
-	checktype(img, "resample_unsort:img", CV_64FC1);
+	CV_Assert(sind.type() == CV_32SC1);
+	CV_Assert(img.type() == CV_64FC1);
 
 	newimg = Mat::zeros(img.rows, img.cols, CV_64F);
 	sp = (int32_t*)sind.data;
@@ -33,7 +33,7 @@ resample_sort(Mat &sind, Mat &img, int type)
 	int32_t *sp;
 	T *np;
 
-	checktype(sind, "resample_sort:sind", CV_32SC1);
+	CV_Assert(sind.type() == CV_32SC1);
 
 	newimg = Mat::zeros(img.rows, img.cols, type);
 	sp = (int32_t*)sind.data;
@@ -95,9 +95,9 @@ resample_interp(Mat &simg, Mat &slat, Mat &slandmask)
 	Mat newimg, bufmat;
 	double x, llat, rlat, lval, rval;
 
-	checktype(simg, "resample_interp:simg", CV_64FC1);
-	checktype(slat, "resample_interp:slat", CV_64FC1);
-	checktype(slandmask, "resample_interp:slandmask", CV_8UC1);
+	CV_Assert(simg.type() == CV_64FC1);
+	CV_Assert(slat.type() == CV_64FC1);
+	CV_Assert(slandmask.type() == CV_8UC1);
 
 	newimg = simg.clone();
 	bufmat = Mat::zeros(simg.rows, 1, CV_32SC1);
@@ -155,9 +155,9 @@ resample_float64(Mat &img, Mat &lat, Mat &acspo)
 {
 	Mat sind, landmask, tmpmat;
 
-	checktype(img, "resample_float64:img", CV_64FC1);
-	checktype(lat, "resample_float64:lat", CV_64FC1);
-	checktype(acspo, "resample_float64:acspo", CV_8UC1);
+	CV_Assert(img.type() == CV_64FC1);
+	CV_Assert(lat.type() == CV_64FC1);
+	CV_Assert(acspo.type() == CV_8UC1);
 
 	sortIdx(lat, sind, CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);
 //dumpmat("sortind.bin", sind);
