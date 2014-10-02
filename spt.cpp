@@ -1,7 +1,9 @@
 #include "spt.h"
 
 //#define DATAPATH "/cephfs/fhs/data/in/acspo/www.star.nesdis.noaa.gov/pub/sod/sst/micros_data/acspo_nc/npp/2014-07-10/ACSPO_V2.30_NPP_VIIRS_2014-07-10_1230-1240_20140713.061812.nc"
-#define DATAPATH "/cephfs/fhs/data/in/acspo/www.star.nesdis.noaa.gov/pub/sod/osb/ykihai/VIIRS_Samples_for_Irina/Select/ACSPO_V2.30_NPP_VIIRS_2014-06-20_1710-1719_20140623.071032.nc"
+//#define DATAPATH "/cephfs/fhs/data/in/acspo/www.star.nesdis.noaa.gov/pub/sod/osb/ykihai/VIIRS_Samples_for_Irina/Select/ACSPO_V2.30_NPP_VIIRS_2014-06-20_1710-1719_20140623.071032.nc"
+
+#define DATAPATH "/cephfs/fhs/data/in/acspo/www.star.nesdis.noaa.gov/pub/sod/sst/micros_data/acspo_nc/npp/2014-07-11/ACSPO_V2.30_NPP_VIIRS_2014-07-11_0000-0010_20140714.005638.nc"
 
 void
 clipsst(Mat &sst)
@@ -122,16 +124,41 @@ logprint(const char *msg)
 	printf("%.*s %s\n", (int)strlen(t)-1, t, msg);
 }
 
+char*
+savefilename(char *path)
+{
+	int n;
+	char buf[200], *p;
+	
+	p = strrchr(path, '/');
+	if(!p)
+		p = path;
+	else
+		p++;
+	
+	n = strlen(p) - 3;
+	p = strncpy(buf, p, n);	// don't copy ".nc" extension
+	p += n;
+	strcpy(p, ".png");
+	return estrdup(buf);
+}
+
 int
 main(int argc, char **argv)
 {
 	Mat sst, lat, elem, sstdil, sstero, rfilt, sstlap, sind;
 	Mat acspo, landmask, interpsst, gradmag, high, low;
-	Mat avgsst;
+	Mat avgsst, rgb;
 	int ncid, n;
+	char *path;
 
-	logprint("reading data...");
-	n = nc_open(DATAPATH, NC_NOWRITE, &ncid);
+	if(argc != 2){
+		eprintf("usage: %s granule\n", argv[0]);
+	}
+	path = argv[1];
+	
+	printf("saving in %s\n", savefilename(path));
+	n = nc_open(path, NC_NOWRITE, &ncid);
 	if(n != NC_NOERR)
 		ncfatal(n);
 	sst = readvar(ncid, "sst_regression");
@@ -141,9 +168,12 @@ main(int argc, char **argv)
 	if(n != NC_NOERR)
 		ncfatal(n);
 
-	logprint("resample...");
 	interpsst = resample_float64(sst, lat, acspo);
-	dumpmat("interpsst.bin", interpsst);
+	resize(interpsst, interpsst, Size(), 0.20, 0.20);
+	gray2rgb(interpsst, rgb, COLORMAP_JET);
+	imwrite(savefilename(path), rgb);
+	
+	//dumpmat("interpsst.bin", interpsst);
 
 /*
 	avgfilter(interpsst, avgsst, 7);

@@ -2,11 +2,13 @@
 #include <netcdf.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <string.h>
 
 using namespace cv;
 using namespace std;
 
 #define SQ(x) ((x)*(x))
+#define SGN(A)		((A) > 0 ? 1 : ((A) < 0 ? -1 : 0 ))
 
 enum {
 	MaskInvalid       = (1<<0),    		// or Valid
@@ -30,7 +32,9 @@ Mat resample_float64(Mat &img, Mat &lat, Mat &acspo);
 
 // utils.cpp
 void eprintf(const char *fmt, ...);
+char* estrdup(const char *s);
 const char *type2str(int type);
+void gray2rgb(Mat &src, Mat &dst, int cmap);
 void cmapimshow(string name, Mat &img, int cmap);
 
 // io.cpp

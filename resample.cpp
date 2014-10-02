@@ -150,6 +150,93 @@ resample_interp(Mat &simg, Mat &slat, Mat &slandmask)
 	return newimg;
 }
 
+enum Pole {
+	NORTHPOLE,
+	SOUTHPOLE,
+	NOPOLE,
+};
+typedef enum Pole Pole;
+
+// Argsort latitude image 'lat' with given swath size.
+// Image of sort indices are return in 'sortidx'.
+static void
+argsortlat(Mat &lat, int swathsize, Mat &sortidx)
+{
+	int i, j, off, width, height, dir, d;
+	Pole pole;
+	Mat col, idx, A, B;
+	Range colrg, toprg, botrg;
+	
+	CV_Assert(lat.type() == CV_64FC1);
+	CV_Assert(swathsize >= 2);
+	
+	width = lat.cols;
+	height = lat.rows;
+	sortidx.create(height, width, CV_32SC1);
+	
+	// For a column in latitude image, look at every 'swathsize' pixels
+	// starting from 'off'. If they increases and then decreases, or
+	// decreases and then increases, we're at the polar region.
+	off = swathsize/2;
+	
+	pole = NOPOLE;
+	
+	for(j = 0; j < width; j++){
+		col = lat.col(j);
+		
+		// find initial direction -- increase, decrease or no change
+		dir = 0;
+		for(i = off; i < height; i += swathsize){
+			dir = SGN(col.at<double>(i+swathsize) - col.at<double>(i));
+			if(dir != 0)
+				break;
+		}
+		
+		// find change in direction if there is one
+		for(; i < height; i += swathsize){
+			d = SGN(col.at<double>(i+swathsize) - col.at<double>(i));
+			if(dir == 1 && d == -1){
+				CV_Assert(pole == NOPOLE || pole == NORTHPOLE);
+				pole = NORTHPOLE;
+				break;
+			}
+			if(dir == -1 && d == 1){
+				CV_Assert(pole == NOPOLE || pole == SOUTHPOLE);
+				pole = SOUTHPOLE;
+				break;
+			}
+		}
+		if(i >= height)
+			pole = NOPOLE;
+//printf("j = %4d, pole = %d\n", j, pole);
+		colrg = Range(j, j+1);
+		toprg = Range(0, i);
+		botrg = Range(i, height);
+
+		// argsort latitudes for this column
+		switch(pole){
+		case NOPOLE:
+			if(dir >= 0)
+				sortIdx(col, sortidx.col(j), CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);
+			else
+				sortIdx(col, sortidx.col(j), CV_SORT_EVERY_COLUMN + CV_SORT_DESCENDING);
+			break;
+		case NORTHPOLE:
+			sortIdx(col.rowRange(toprg), sortidx(toprg, colrg),
+				CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);
+			sortIdx(col.rowRange(botrg), sortidx(botrg, colrg),
+				CV_SORT_EVERY_COLUMN + CV_SORT_DESCENDING);
+			break;
+		case SOUTHPOLE:
+			sortIdx(col.rowRange(toprg), sortidx(toprg, colrg),
+				CV_SORT_EVERY_COLUMN + CV_SORT_DESCENDING);
+			sortIdx(col.rowRange(botrg), sortidx(botrg, colrg),
+				CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);
+			break;
+		}
+	}
+}
+
 Mat
 resample_float64(Mat &img, Mat &lat, Mat &acspo)
 {
@@ -159,7 +246,8 @@ resample_float64(Mat &img, Mat &lat, Mat &acspo)
 	CV_Assert(lat.type() == CV_64FC1);
 	CV_Assert(acspo.type() == CV_8UC1);
 
-	sortIdx(lat, sind, CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);
+	//sortIdx(lat, sind, CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);
+	argsortlat(lat, 10, sind);
 //dumpmat("sortind.bin", sind);
 
 	img = resample_sort<double>(sind, img, CV_64FC1);
