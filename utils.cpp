@@ -17,6 +17,26 @@ eprintf(const char *fmt, ...)
 	exit(2);
 }
 
+void
+logprintf(const char *fmt, ...)
+{
+	va_list args;
+	time_t now;
+	char *t;
+
+	time(&now);
+	t = ctime(&now);
+	// omit '\n' from time when printing
+	printf("%.*s ", (int)strlen(t)-1, t);
+	
+	fflush(stdout);
+	va_start(args, fmt);
+	vfprintf(stderr, fmt, args);
+	va_end(args);
+	printf("\n");
+
+}
+
 char*
 estrdup(const char *s)
 {

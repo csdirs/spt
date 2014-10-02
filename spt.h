@@ -37,6 +37,7 @@ Mat resample_float64(Mat &img, Mat &lat, Mat &acspo);
 
 // utils.cpp
 void eprintf(const char *fmt, ...);
+void logprintf(const char *fmt, ...);
 char* estrdup(const char *s);
 const char *type2str(int type);
 void gray2rgb(Mat &src, Mat &dst, int cmap);

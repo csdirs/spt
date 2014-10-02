@@ -112,18 +112,6 @@ localmax(Mat &gradmag, Mat &high, Mat &low, int sigma)
 	}
 }
 
-void
-logprint(const char *msg)
-{
-	time_t now;
-	char *t;
-
-	time(&now);
-	t = ctime(&now);
-	// omit '\n' from time when printing
-	printf("%.*s %s\n", (int)strlen(t)-1, t, msg);
-}
-
 char*
 savefilename(char *path)
 {
@@ -176,7 +164,7 @@ main(int argc, char **argv)
 
 /*
 	avgfilter(interpsst, avgsst, 7);
-	logprint("gradmag...");
+	logprintf("gradmag...");
 	gradientmag(interpsst, gradmag);
 
 	//D = interpsst - avgsst;
@@ -188,26 +176,26 @@ main(int argc, char **argv)
 */
 
 /*
-	logprint("dilate...");
+	logprintf("dilate...");
 	elem = getStructuringElement(MORPH_RECT, Size(3, 3), Point(1, 1));
 	dilate(interpsst, sstdil, elem);
-	logprint("erode...");
+	logprintf("erode...");
 	erode(interpsst, sstero, elem);
-	logprint("rangefilt...");
+	logprintf("rangefilt...");
 	subtract(sstdil, sstero, rfilt);
 
-	logprint("laplacian...");
+	logprintf("laplacian...");
 	laplacian(interpsst, sstlap);
 
-	logprint("localmax...");
+	logprintf("localmax...");
 	localmax(gradmag, high, low, 1);
 
-	logprint("saving output...");
+	logprintf("saving output...");
 	dumpmat("gradmag.bin", gradmag);
 	dumpmat("high.bin", high);
 	dumpmat("low.bin", low);
 
-	logprint("done...");
+	logprintf("done...");
 
 	clipsst(rfilt);
 	cmapimshow("Rangefilt SST", rfilt, COLORMAP_JET);
