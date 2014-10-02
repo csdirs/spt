@@ -59,8 +59,6 @@ cmapimshow(string name, Mat &img, int cmap)
 	double min, max;
 
 	minMaxLoc(img, &min, &max, NULL, NULL);
-	cout << name << " min: " << min << " max: " << max << endl;
-	cout << name << " type: " << img.type() << endl;
 
 	switch(img.type()){
 	default:
