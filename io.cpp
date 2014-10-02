@@ -21,7 +21,7 @@ readvar(int ncid, const char *name)
 	}
 	switch(nct){
 	default:
-		fatal("unknown netcdf data type");
+		eprintf("unknown netcdf data type");
 		break;
 	case NC_BYTE:
 		img = Mat::zeros(shape[0], shape[1], CV_8SC1);
@@ -53,17 +53,17 @@ dumpmat(const char *filename, Mat &m)
 	FILE *f;
 
 	if(!m.isContinuous()){
-		fatal("m not continuous");
+		eprintf("m not continuous");
 	}
 	f = fopen(filename, "w");
 	if(!f){
-		fatal("open failed");
+		eprintf("open failed");
 	}
 	n = fwrite(m.data, m.elemSize1(), m.rows*m.cols, f);
 	if(n != m.rows*m.cols){
 		fclose(f);
 		printf("wrote %d items\n", n);
-		fatal("write failed");
+		eprintf("write failed");
 	}
 	fclose(f);
 }

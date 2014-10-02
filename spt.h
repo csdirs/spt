@@ -2,6 +2,7 @@
 #include <opencv2/opencv.hpp>
 #include <netcdf.h>
 #include <stdio.h>
+#include <stdarg.h>
 
 using namespace cv;
 using namespace std;
@@ -30,8 +31,9 @@ Mat resample_float64(Mat &img, Mat &lat, Mat &acspo);
 
 // utils.cpp
 void ncfatal(int n);
+void eprintf(const char *fmt, ...);
 void fatal(string msg);
-string type2str(int type);
+char *type2str(int type);
 void checktype(Mat &mat, string name, int type);
 void cmapimshow(string name, Mat &img, int cmap);
 

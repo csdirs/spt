@@ -8,29 +8,56 @@ ncfatal(int n)
 }
 
 void
-fatal(string msg)
+eprintf(const char *fmt, ...)
 {
-	cerr << msg << endl;
+	va_list args;
+
+	fflush(stdout);
+	va_start(args, fmt);
+	vfprintf(stderr, fmt, args);
+	va_end(args);
+
+	if(fmt[0] != '\0' && fmt[strlen(fmt)-1] == ':')
+		fprintf(stderr, " %s", strerror(errno));
+	fprintf(stderr, "\n");
+
 	exit(2);
 }
 
-string
-type2str(int type) {
-  string r;
+char*
+estrdup(const char *s)
+{
+	char *dup;
 
-  switch(type & CV_MAT_DEPTH_MASK){
-    default:     r = "User"; break;
-    case CV_8U:  r = "8U"; break;
-    case CV_8S:  r = "8S"; break;
-    case CV_16U: r = "16U"; break;
-    case CV_16S: r = "16S"; break;
-    case CV_32S: r = "32S"; break;
-    case CV_32F: r = "32F"; break;
-    case CV_64F: r = "64F"; break;
-  }
-  r += "C";
-  r += (1 + (type >> CV_CN_SHIFT)) + '0';
-  return r;
+	dup = strdup(s);
+	if(dup == NULL)
+		eprintf("strdup of \"%s\" failed:", s);
+	return dup;
+}
+
+char*
+type2str(int type)
+{
+	int n;
+	const char *dp;
+	char cn, r[10];
+	
+	switch(type & CV_MAT_DEPTH_MASK){
+	default: dp = "User"; break;
+	case CV_8U:  dp = "8U"; break;
+	case CV_8S:  dp = "8S"; break;
+	case CV_16U: dp = "16U"; break;
+	case CV_16S: dp = "16S"; break;
+	case CV_32S: dp = "32S"; break;
+	case CV_32F: dp = "32F"; break;
+	case CV_64F: dp = "64F"; break;
+	}
+	cn = (1 + (type >> CV_CN_SHIFT)) + '0';
+	
+	n = snprintf(r, sizeof(r)-1, "%sC%c", dp, cn);
+	r[n] = '\0';
+	
+	return estrdup(r);
 }
 
 void
@@ -54,7 +81,7 @@ cmapimshow(string name, Mat &img, int cmap)
 
 	switch(img.type()){
 	default:
-		fatal("unkown Mat type");
+		eprintf("unkown Mat type %s", type2str(img.type()));
 		break;
 	case CV_8SC1:
 	case CV_8UC1:
