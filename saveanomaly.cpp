@@ -1,5 +1,34 @@
 #include "spt.h"
 
+void
+saveanomaly(char *path, Mat &mat)
+{
+	int n, ncid, dims[2], vid;
+	
+	CV_Assert(mat.channels() == 1);
+	if(mat.depth() != CV_32F)
+		mat.convertTo(mat, CV_32F);
+	
+	n = nc_create(path, NC_NOCLOBBER|NC_NETCDF4, &ncid);
+	if (n != NC_NOERR)
+		ncfatal(n);
+	n = nc_def_dim(ncid, "scan_lines_along_track", mat.rows, &dims[0]);
+	if (n != NC_NOERR)
+		ncfatal(n);
+	n = nc_def_dim(ncid, "pixels_across_track", mat.cols, &dims[1]);
+	if (n != NC_NOERR)
+		ncfatal(n);
+	n = nc_def_var (ncid, "anomaly", NC_FLOAT, nelem(dims), dims, &vid);
+	if (n != NC_NOERR)
+		ncfatal(n);
+	n = nc_put_var_float(ncid, vid, (float*)mat.data);
+	if (n != NC_NOERR)
+		ncfatal(n);
+	n = nc_close(ncid);
+	if(n != NC_NOERR)
+		ncfatal(n);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -26,13 +55,6 @@ main(int argc, char **argv)
 	sst = resample_float64(sst, lat, acspo);
 	anomaly = sst - reynolds;
 	
-	// TODO: write anomaly into a new netcdf file
-	// instead of the following.
-	resize(anomaly, anomaly, Size(), 0.20, 0.20);
-	gray2rgb(anomaly, rgb, COLORMAP_JET);
-	imwrite(outpath, rgb);
-	
-	//dumpmat("anomaly.bin", anomaly);
-
+	saveanomaly(outpath, anomaly);
 	return 0;
 }
