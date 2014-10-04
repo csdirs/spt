@@ -162,7 +162,7 @@ typedef enum Pole Pole;
 static void
 argsortlat(Mat &lat, int swathsize, Mat &sortidx)
 {
-	int i, j, off, width, height, dir, d;
+	int i, j, off, width, height, dir, d, split;
 	Pole pole;
 	Mat col, idx, botidx;
 	Range colrg, toprg, botrg;
@@ -186,15 +186,15 @@ argsortlat(Mat &lat, int swathsize, Mat &sortidx)
 		
 		// find initial direction -- increase, decrease or no change
 		dir = 0;
-		for(i = off; i < height; i += swathsize){
-			dir = SGN(col.at<double>(i+swathsize) - col.at<double>(i));
+		for(i = off+swathsize; i < height; i += swathsize){
+			dir = SGN(col.at<double>(i) - col.at<double>(i-swathsize));
 			if(dir != 0)
 				break;
 		}
 		
 		// find change in direction if there is one
 		for(; i < height; i += swathsize){
-			d = SGN(col.at<double>(i+swathsize) - col.at<double>(i));
+			d = SGN(col.at<double>(i) - col.at<double>(i-swathsize));
 			if(dir == 1 && d == -1){
 				CV_Assert(pole == NOPOLE || pole == NORTHPOLE);
 				pole = NORTHPOLE;
@@ -206,37 +206,35 @@ argsortlat(Mat &lat, int swathsize, Mat &sortidx)
 				break;
 			}
 		}
-		if(i >= height)
+		
+		if(i >= height){
 			pole = NOPOLE;
-//printf("j = %4d, pole = %d, split = %d\n", j, pole, i);
-		colrg = Range(j, j+1);
-		toprg = Range(0, i);
-		botrg = Range(i, height);
-
-		// argsort latitudes for this column
-		switch(pole){
-		case NOPOLE:
 			if(dir >= 0)
 				sortIdx(col, sortidx.col(j), CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);
 			else
 				sortIdx(col, sortidx.col(j), CV_SORT_EVERY_COLUMN + CV_SORT_DESCENDING);
-			break;
-		case NORTHPOLE:
+			continue;
+		}
+		
+		split = i-swathsize;	// split before change in direction
+		colrg = Range(j, j+1);
+		toprg = Range(0, split);
+		botrg = Range(split, height);
+		
+		if(pole == NORTHPOLE){
 			botidx = sortidx(botrg, colrg);
 			sortIdx(col.rowRange(toprg), sortidx(toprg, colrg),
 				CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);
 			sortIdx(col.rowRange(botrg), botidx,
 				CV_SORT_EVERY_COLUMN + CV_SORT_DESCENDING);
-			botidx += i;
-			break;
-		case SOUTHPOLE:
+			botidx += split;
+		}else{	// pole == SOUTHPOLE
 			botidx = sortidx(botrg, colrg);
 			sortIdx(col.rowRange(toprg), sortidx(toprg, colrg),
 				CV_SORT_EVERY_COLUMN + CV_SORT_DESCENDING);
 			sortIdx(col.rowRange(botrg), botidx,
 				CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);
-			botidx += i;
-			break;
+			botidx += split;
 		}
 	}
 }
