@@ -1,4 +1,8 @@
 syntax: glob
 
 spt
+saveanomaly
 *.o
+*.nc
+*.png
+*.bin

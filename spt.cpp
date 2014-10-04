@@ -147,13 +147,13 @@ main(int argc, char **argv)
 	printf("saving in %s\n", savefilename(path));
 	n = nc_open(path, NC_NOWRITE, &ncid);
 	if(n != NC_NOERR)
-		ncfatal(n);
+		ncfatal(n, "nc_open failed for %s", path);
 	sst = readvar(ncid, "sst_regression");
 	lat = readvar(ncid, "latitude");
 	acspo = readvar(ncid, "acspo_mask");
 	n = nc_close(ncid);
 	if(n != NC_NOERR)
-		ncfatal(n);
+		ncfatal(n, "nc_close failed for %s", path);
 
 	interpsst = resample_float64(sst, lat, acspo);
 	resize(interpsst, interpsst, Size(), 0.20, 0.20);

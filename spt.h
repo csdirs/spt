@@ -47,4 +47,4 @@ void cmapimshow(string name, Mat &img, int cmap);
 // io.cpp
 void dumpmat(const char *filename, Mat &m);
 Mat readvar(int ncid, const char *name);
-void ncfatal(int n);
+void ncfatal(int n, const char *fmt, ...);
