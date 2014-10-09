@@ -25,6 +25,8 @@ resample_unsort_(Mat &sind, Mat &img)
 	return newimg;
 }
 
+// Returns the unsorted image of the sorted image img.
+// Sind is the image of sort indices.
 Mat
 resample_unsort(Mat &sind, Mat &img)
 {
@@ -71,6 +73,8 @@ resample_sort_(Mat &sind, Mat &img)
 	return newimg;
 }
 
+// Returns the sorted image of the unsorted image img.
+// Sind is the image of sort indices.
 Mat
 resample_sort(Mat &sind, Mat &img)
 {
@@ -92,6 +96,7 @@ resample_sort(Mat &sind, Mat &img)
 	return Mat();
 }
 
+// Returns the average of 3 pixels.
 static double
 avg3(double a, double b, double c)
 {
@@ -102,8 +107,9 @@ avg3(double a, double b, double c)
 	return (a+b+c)/3.0;
 }
 
-// Average filter of image 'in' with a window of 3x1
-// where sorted order is not the same as the origial order.
+// Returns the average filter of image 'in' with a window of 3x1
+// where sorted order is not the same as the original order.
+// Sind is the sort indices giving the sort order.
 static Mat
 avgfilter3(Mat &in, Mat &sind)
 {
@@ -134,6 +140,9 @@ avgfilter3(Mat &in, Mat &sind)
 	return out;
 }
 
+// Interpolate the missing values in image simg and returns the result.
+// Slat is the latitude image, and slandmask is the land mask image.
+// All input arguments must already be sorted.
 Mat
 resample_interp(Mat &simg, Mat &slat, Mat &slandmask)
 {
@@ -216,6 +225,7 @@ argsortlat(Mat &lat, int swathsize, Mat &sortidx)
 	
 	CV_Assert(lat.type() == CV_32FC1);
 	CV_Assert(swathsize >= 2);
+	CV_Assert(lat.data != sortidx.data);
 	
 	width = lat.cols;
 	height = lat.rows;
@@ -286,6 +296,8 @@ argsortlat(Mat &lat, int swathsize, Mat &sortidx)
 	}
 }
 
+// Resample VIIRS swatch image img with corresponding
+// latitude image lat, and ACSPO mask acspo.
 Mat
 resample_float32(Mat &img, Mat &lat, Mat &acspo)
 {
@@ -295,19 +307,12 @@ resample_float32(Mat &img, Mat &lat, Mat &acspo)
 	CV_Assert(lat.type() == CV_32FC1);
 	CV_Assert(acspo.type() == CV_8UC1);
 
-	//sortIdx(lat, sind, CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);
 	argsortlat(lat, VIIRS_SWATH_SIZE, sind);
-//dumpmat("sortind.bin", sind);
-//cmapimshow("lat", lat, COLORMAP_JET);
-//cmapimshow("Sort ind", sind, COLORMAP_JET);
 
 	img = resample_sort(sind, img);
-//dumpmat("sortsst.bin", img);
 	img = avgfilter3(img, sind);
-//dumpmat("avgfiltsst.bin", img);
 
 	lat = resample_sort(sind, lat);
-//cmapimshow("Sorted lat", lat, COLORMAP_JET);
 	acspo = resample_sort(sind, acspo);
 	landmask = (acspo & MaskLand) != 0;
 
