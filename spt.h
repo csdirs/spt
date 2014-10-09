@@ -32,7 +32,6 @@ enum {
 };
 
 // resample.cpp
-Mat resample_interp(Mat &slat, Mat &simg, Mat &slandmask);
 Mat resample_float32(Mat &img, Mat &lat, Mat &acspo);
 
 // utils.cpp

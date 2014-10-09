@@ -27,7 +27,7 @@ resample_unsort_(Mat &sind, Mat &img)
 
 // Returns the unsorted image of the sorted image img.
 // Sind is the image of sort indices.
-Mat
+static Mat
 resample_unsort(Mat &sind, Mat &img)
 {
 	switch(img.type()){
@@ -75,7 +75,7 @@ resample_sort_(Mat &sind, Mat &img)
 
 // Returns the sorted image of the unsorted image img.
 // Sind is the image of sort indices.
-Mat
+static Mat
 resample_sort(Mat &sind, Mat &img)
 {
 	switch(img.type()){
@@ -143,7 +143,7 @@ avgfilter3(Mat &in, Mat &sind)
 // Interpolate the missing values in image simg and returns the result.
 // Slat is the latitude image, and slandmask is the land mask image.
 // All input arguments must already be sorted.
-Mat
+static Mat
 resample_interp(Mat &simg, Mat &slat, Mat &slandmask)
 {
 	int i, j, k, nbuf, *buf;

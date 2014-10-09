@@ -56,13 +56,12 @@ dumpmat(const char *filename, Mat &m)
 	}
 	f = fopen(filename, "w");
 	if(!f){
-		eprintf("open failed");
+		eprintf("open %s failed:", filename);
 	}
 	n = fwrite(m.data, m.elemSize1(), m.rows*m.cols, f);
 	if(n != m.rows*m.cols){
 		fclose(f);
-		printf("wrote %d items\n", n);
-		eprintf("write failed");
+		eprintf("wrote %d/%d items; write failed:", n, m.rows*m.cols);
 	}
 	fclose(f);
 }
