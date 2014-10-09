@@ -109,20 +109,20 @@ avgfilter3(Mat &in, Mat &sind)
 {
 	Mat out;
 	int i, j, rows, cols, *sindp;
-	double *ip, *op;
+	float *ip, *op;
 
-	CV_Assert(in.type() == CV_64FC1);
+	CV_Assert(in.type() == CV_32FC1);
 	CV_Assert(sind.type() == CV_32SC1);
 	rows = in.rows;
 	cols = in.cols;
 
-	out.create(rows, cols, CV_64FC1);
+	out.create(rows, cols, CV_32FC1);
 	in.row(0).copyTo(out.row(0));
 	in.row(rows-1).copyTo(out.row(rows-1));
 
 	for(i = 1; i < rows-1; i++){
-		ip = in.ptr<double>(i);
-		op = out.ptr<double>(i);
+		ip = in.ptr<float>(i);
+		op = out.ptr<float>(i);
 		sindp = sind.ptr<int>(i);
 		for(j = 0; j < cols; j++){
 			if(sindp[j] != i)
@@ -141,8 +141,8 @@ resample_interp(Mat &simg, Mat &slat, Mat &slandmask)
 	Mat newimg, bufmat;
 	double x, llat, rlat, lval, rval;
 
-	CV_Assert(simg.type() == CV_64FC1);
-	CV_Assert(slat.type() == CV_64FC1);
+	CV_Assert(simg.type() == CV_32FC1);
+	CV_Assert(slat.type() == CV_32FC1);
 	CV_Assert(slandmask.type() == CV_8UC1);
 
 	newimg = simg.clone();
@@ -160,26 +160,26 @@ resample_interp(Mat &simg, Mat &slat, Mat &slandmask)
 			}
 
 			// valid pixel
-			if(!isnan(simg.at<double>(i, j))){
+			if(!isnan(simg.at<float>(i, j))){
 				// first pixel is not valid, so extrapolate
 				if(llat == -999){
 					for(k = 0; k < nbuf; k++){
-						newimg.at<double>(buf[k],j) = simg.at<double>(i, j);
+						newimg.at<float>(buf[k],j) = simg.at<float>(i, j);
 					}
 					nbuf = 0;
 				}
 
 				// interpolate pixels in buffer
 				for(k = 0; k < nbuf; k++){
-					rlat = slat.at<double>(i, j);
-					rval = simg.at<double>(i, j);
-					x = slat.at<double>(buf[k], j);
-					newimg.at<double>(buf[k],j) =
+					rlat = slat.at<float>(i, j);
+					rval = simg.at<float>(i, j);
+					x = slat.at<float>(buf[k], j);
+					newimg.at<float>(buf[k],j) =
 						lval + (rval - lval)*(x - llat)/(rlat - llat);
 				}
 
-				llat = slat.at<double>(i, j);
-				lval = simg.at<double>(i, j);
+				llat = slat.at<float>(i, j);
+				lval = simg.at<float>(i, j);
 				nbuf = 0;
 				continue;
 			}
@@ -190,7 +190,7 @@ resample_interp(Mat &simg, Mat &slat, Mat &slandmask)
 		// extrapolate the last pixels
 		if(llat != -999){
 			for(k = 0; k < nbuf; k++){
-				newimg.at<double>(buf[k],j) = lval;
+				newimg.at<float>(buf[k],j) = lval;
 			}
 		}
 	}
@@ -214,7 +214,7 @@ argsortlat(Mat &lat, int swathsize, Mat &sortidx)
 	Mat col, idx, botidx;
 	Range colrg, toprg, botrg;
 	
-	CV_Assert(lat.type() == CV_64FC1);
+	CV_Assert(lat.type() == CV_32FC1);
 	CV_Assert(swathsize >= 2);
 	
 	width = lat.cols;
@@ -234,14 +234,14 @@ argsortlat(Mat &lat, int swathsize, Mat &sortidx)
 		// find initial direction -- increase, decrease or no change
 		dir = 0;
 		for(i = off+swathsize; i < height; i += swathsize){
-			dir = SGN(col.at<double>(i) - col.at<double>(i-swathsize));
+			dir = SGN(col.at<float>(i) - col.at<float>(i-swathsize));
 			if(dir != 0)
 				break;
 		}
 		
 		// find change in direction if there is one
 		for(; i < height; i += swathsize){
-			d = SGN(col.at<double>(i) - col.at<double>(i-swathsize));
+			d = SGN(col.at<float>(i) - col.at<float>(i-swathsize));
 			if(dir == 1 && d == -1){
 				CV_Assert(pole == NOPOLE || pole == NORTHPOLE);
 				pole = NORTHPOLE;
@@ -287,12 +287,12 @@ argsortlat(Mat &lat, int swathsize, Mat &sortidx)
 }
 
 Mat
-resample_float64(Mat &img, Mat &lat, Mat &acspo)
+resample_float32(Mat &img, Mat &lat, Mat &acspo)
 {
 	Mat sind, landmask;
 
-	CV_Assert(img.type() == CV_64FC1);
-	CV_Assert(lat.type() == CV_64FC1);
+	CV_Assert(img.type() == CV_32FC1);
+	CV_Assert(lat.type() == CV_32FC1);
 	CV_Assert(acspo.type() == CV_8UC1);
 
 	//sortIdx(lat, sind, CV_SORT_EVERY_COLUMN + CV_SORT_ASCENDING);

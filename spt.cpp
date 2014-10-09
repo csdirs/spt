@@ -155,7 +155,7 @@ main(int argc, char **argv)
 	if(n != NC_NOERR)
 		ncfatal(n, "nc_close failed for %s", path);
 
-	interpsst = resample_float64(sst, lat, acspo);
+	interpsst = resample_float32(sst, lat, acspo);
 	resize(interpsst, interpsst, Size(), 0.20, 0.20);
 	gray2rgb(interpsst, rgb, COLORMAP_JET);
 	imwrite(savefilename(path), rgb);

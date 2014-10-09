@@ -52,7 +52,7 @@ main(int argc, char **argv)
 	if(n != NC_NOERR)
 		ncfatal(n, "nc_close failed for %s", inpath);
 	
-	sst = resample_float64(sst, lat, acspo);
+	sst = resample_float32(sst, lat, acspo);
 	anomaly = sst - reynolds;
 	
 	saveanomaly(outpath, anomaly);

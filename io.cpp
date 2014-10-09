@@ -40,7 +40,6 @@ readvar(int ncid, const char *name)
 		n = nc_get_var_float(ncid, varid, (float*)img.data);
 		if(n != NC_NOERR)
 			ncfatal(n, "nc_get_var_float failed");
-		img.convertTo(img, CV_64F);
 		break;
 	}
 	return img;
