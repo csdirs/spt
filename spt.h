@@ -5,7 +5,6 @@
 #include <string.h>
 
 using namespace cv;
-using namespace std;
 
 #define SQ(x)    ((x)*(x))
 #define SGN(A)   ((A) > 0 ? 1 : ((A) < 0 ? -1 : 0 ))

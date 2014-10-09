@@ -1,7 +1,7 @@
 SPT = spt
 SAVEANOMALY = saveanomaly
 CXX = g++
-CXXFLAGS = -g -Wall
+CXXFLAGS = -g -Wall -march=native -O2
 LD = g++
 LDFLAGS = -lnetcdf\
 	-lopencv_core\

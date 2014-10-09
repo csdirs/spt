@@ -1,32 +1,54 @@
 #include "spt.h"
 
-Mat
-resample_unsort(Mat &sind, Mat &img)
+template <class T>
+static Mat
+resample_unsort_(Mat &sind, Mat &img)
 {
 	Mat newimg;
 	int i, j, k;
 	int32_t *sp;
-	double *ip;
+	T *ip;
 
 	CV_Assert(sind.type() == CV_32SC1);
-	CV_Assert(img.type() == CV_64FC1);
+	CV_Assert(img.channels() == 1);
 
-	newimg = Mat::zeros(img.rows, img.cols, CV_64F);
+	newimg = Mat::zeros(img.rows, img.cols, img.type());
 	sp = (int32_t*)sind.data;
-	ip = (double*)img.data;
+	ip = (T*)img.data;
 	k = 0;
 	for(i = 0; i < newimg.rows; i++){
 		for(j = 0; j < newimg.cols; j++){
-			newimg.at<double>(sp[k], j) = ip[k];
+			newimg.at<T>(sp[k], j) = ip[k];
 			k++;
 		}
 	}
 	return newimg;
 }
 
-template <class T>
 Mat
-resample_sort(Mat &sind, Mat &img, int type)
+resample_unsort(Mat &sind, Mat &img)
+{
+	switch(img.type()){
+	default:
+		eprintf("unsupported type %s\n", type2str(img.type()));
+		break;
+	case CV_8UC1:
+		return resample_unsort_<uchar>(sind, img);
+		break;
+	case CV_32FC1:
+		return resample_unsort_<float>(sind, img);
+		break;
+	case CV_64FC1:
+		return resample_unsort_<double>(sind, img);
+		break;
+	}
+	// not reached
+	return Mat();
+}
+
+template <class T>
+static Mat
+resample_sort_(Mat &sind, Mat &img)
 {
 	Mat newimg;
 	int i, j, k;
@@ -34,9 +56,10 @@ resample_sort(Mat &sind, Mat &img, int type)
 	T *np;
 
 	CV_Assert(sind.type() == CV_32SC1);
+	CV_Assert(img.channels() == 1);
 
-	newimg = Mat::zeros(img.rows, img.cols, type);
-	sp = (int32_t*)sind.data;
+	newimg = Mat::zeros(img.rows, img.cols, img.type());
+	sp = (int*)sind.data;
 	np = (T*)newimg.data;
 	k = 0;
 	for(i = 0; i < newimg.rows; i++){
@@ -46,6 +69,27 @@ resample_sort(Mat &sind, Mat &img, int type)
 		}
 	}
 	return newimg;
+}
+
+Mat
+resample_sort(Mat &sind, Mat &img)
+{
+	switch(img.type()){
+	default:
+		eprintf("unsupported type %s\n", type2str(img.type()));
+		break;
+	case CV_8UC1:
+		return resample_sort_<uchar>(sind, img);
+		break;
+	case CV_32FC1:
+		return resample_sort_<float>(sind, img);
+		break;
+	case CV_64FC1:
+		return resample_sort_<double>(sind, img);
+		break;
+	}
+	// not reached
+	return Mat();
 }
 
 static double
@@ -60,9 +104,10 @@ avg3(double a, double b, double c)
 
 // Average filter of image 'in' with a window of 3x1
 // where sorted order is not the same as the origial order.
-static void
-avgfilter3(Mat &in, Mat &out, Mat &sind)
+static Mat
+avgfilter3(Mat &in, Mat &sind)
 {
+	Mat out;
 	int i, j, rows, cols, *sindp;
 	double *ip, *op;
 
@@ -86,6 +131,7 @@ avgfilter3(Mat &in, Mat &out, Mat &sind)
 				op[j] = ip[j];
 		}
 	}
+	return out;
 }
 
 Mat
@@ -106,6 +152,7 @@ resample_interp(Mat &simg, Mat &slat, Mat &slandmask)
 	for(j = 0; j < simg.cols; j++){
 		nbuf = 0;
 		llat = -999;
+		lval = NAN;
 		for(i = 0; i < simg.rows; i++){
 			// land pixel, nothing to do
 			if(slandmask.at<unsigned char>(i, j) != 0){
@@ -242,7 +289,7 @@ argsortlat(Mat &lat, int swathsize, Mat &sortidx)
 Mat
 resample_float64(Mat &img, Mat &lat, Mat &acspo)
 {
-	Mat sind, landmask, tmpmat;
+	Mat sind, landmask;
 
 	CV_Assert(img.type() == CV_64FC1);
 	CV_Assert(lat.type() == CV_64FC1);
@@ -254,15 +301,14 @@ resample_float64(Mat &img, Mat &lat, Mat &acspo)
 //cmapimshow("lat", lat, COLORMAP_JET);
 //cmapimshow("Sort ind", sind, COLORMAP_JET);
 
-	img = resample_sort<double>(sind, img, CV_64FC1);
+	img = resample_sort(sind, img);
 //dumpmat("sortsst.bin", img);
-	avgfilter3(img, tmpmat, sind);
-	img = tmpmat;
-//dumpmat("medfiltsst.bin", img);
+	img = avgfilter3(img, sind);
+//dumpmat("avgfiltsst.bin", img);
 
-	lat = resample_sort<double>(sind, lat, CV_64FC1);
+	lat = resample_sort(sind, lat);
 //cmapimshow("Sorted lat", lat, COLORMAP_JET);
-	acspo = resample_sort<unsigned char>(sind, acspo, CV_8UC1);
+	acspo = resample_sort(sind, acspo);
 	landmask = (acspo & MaskLand) != 0;
 
 	return resample_interp(img, lat, landmask);
