@@ -296,6 +296,25 @@ argsortlat(Mat &lat, int swathsize, Mat &sortidx)
 	}
 }
 
+
+void
+benchmark_avgfilter3(Mat &img, Mat &sind, int N)
+{
+	int i;
+	struct timespec tstart, tend;
+	double secs;
+	
+	clock_gettime(CLOCK_MONOTONIC, &tstart);
+	for(i = 0; i < N; i++){
+		avgfilter3(img, sind);
+	}
+	clock_gettime(CLOCK_MONOTONIC, &tend);
+	
+	secs = ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) - 
+		((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec);
+	printf("avgfilter3 took about %.5f seconds; %f ops/sec\n", secs, N/secs);
+}
+
 // Resample VIIRS swatch image img with corresponding
 // latitude image lat, and ACSPO mask acspo.
 Mat
@@ -310,7 +329,9 @@ resample_float32(Mat &img, Mat &lat, Mat &acspo)
 	argsortlat(lat, VIIRS_SWATH_SIZE, sind);
 
 	img = resample_sort(sind, img);
+//benchmark_avgfilter3(img, sind, 100);
 	img = avgfilter3(img, sind);
+//dumpmat("avgfilter3_new.bin", img);
 
 	lat = resample_sort(sind, lat);
 	acspo = resample_sort(sind, acspo);
