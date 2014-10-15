@@ -40,9 +40,8 @@
 // 2011 Jason Newton <nevion@gmail.com>
 //M*/
 //
-#include <opencv2/opencv.hpp>
-#include <vector>
 #include "connectedcomponents.h"
+#include <vector>
 
 namespace cv{
     namespace connectedcomponents{
@@ -365,9 +364,7 @@ int connectedComponents_sub1(const cv::Mat &I, cv::Mat &L, int connectivity, Sta
 
 }
 
-using namespace cv;
-
-int connectedComponents(InputArray _img, OutputArray _labels, int connectivity, int ltype){
+int cv::connectedComponents(InputArray _img, OutputArray _labels, int connectivity, int ltype){
     const cv::Mat img = _img.getMat();
     _labels.create(img.size(), CV_MAT_DEPTH(ltype));
     cv::Mat labels = _labels.getMat();
@@ -382,7 +379,7 @@ int connectedComponents(InputArray _img, OutputArray _labels, int connectivity, 
     }
 }
 
-int connectedComponentsWithStats(InputArray _img, OutputArray _labels, OutputArray statsv,
+int cv::connectedComponentsWithStats(InputArray _img, OutputArray _labels, OutputArray statsv,
                                      OutputArray centroids, int connectivity, int ltype)
 {
     const cv::Mat img = _img.getMat();
