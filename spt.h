@@ -4,6 +4,8 @@
 #include <stdarg.h>
 #include <string.h>
 
+#include "connectedcomponents.h"
+
 using namespace cv;
 
 #define SQ(x)    ((x)*(x))

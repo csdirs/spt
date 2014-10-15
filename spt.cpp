@@ -1,10 +1,5 @@
 #include "spt.h"
 
-//#define DATAPATH "/cephfs/fhs/data/in/acspo/www.star.nesdis.noaa.gov/pub/sod/sst/micros_data/acspo_nc/npp/2014-07-10/ACSPO_V2.30_NPP_VIIRS_2014-07-10_1230-1240_20140713.061812.nc"
-//#define DATAPATH "/cephfs/fhs/data/in/acspo/www.star.nesdis.noaa.gov/pub/sod/osb/ykihai/VIIRS_Samples_for_Irina/Select/ACSPO_V2.30_NPP_VIIRS_2014-06-20_1710-1719_20140623.071032.nc"
-
-#define DATAPATH "/cephfs/fhs/data/in/acspo/www.star.nesdis.noaa.gov/pub/sod/sst/micros_data/acspo_nc/npp/2014-07-11/ACSPO_V2.30_NPP_VIIRS_2014-07-11_0000-0010_20140714.005638.nc"
-
 void
 clipsst(Mat &sst)
 {
@@ -66,6 +61,8 @@ localmax(Mat &gradmag, Mat &high, Mat &low, int sigma)
 	double e, a, dd, mu1, mu2, *Dxxp, *Dxyp, *Dyyp, *highp, *lowp;
 	Mat DGaussxx, DGaussxy, DGaussyy,
 		Dxx, Dxy, Dyy;
+	
+	CV_Assert(gradmag.type() == CV_64FC1);
 
 	winsz = 2*(NStd*sigma) + 1;
 	DGaussxx = Mat::zeros(winsz, winsz, CV_64FC1);
@@ -131,20 +128,23 @@ savefilename(char *path)
 	return estrdup(buf);
 }
 
+#define GRAD_THRESH 0.3
+#define EDGE_THRESH 1
+
 int
 main(int argc, char **argv)
 {
 	Mat sst, lat, elem, sstdil, sstero, rfilt, sstlap, sind;
-	Mat acspo, landmask, interpsst, gradmag, high, low;
-	Mat avgsst, rgb;
-	int ncid, n;
+	Mat acspo, landmask, gradmag, lam1, lam2;
+	Mat avgsst, D, easyclouds, easyfronts, maskf;
+	Mat labels, stats, centoids;
+	int i, ncid, n, nlabels;
 	char *path;
 
 	if(argc != 2)
 		eprintf("usage: %s granule\n", argv[0]);
 	path = argv[1];
 	
-	printf("saving in %s\n", savefilename(path));
 	n = nc_open(path, NC_NOWRITE, &ncid);
 	if(n != NC_NOERR)
 		ncfatal(n, "nc_open failed for %s", path);
@@ -155,25 +155,42 @@ main(int argc, char **argv)
 	if(n != NC_NOERR)
 		ncfatal(n, "nc_close failed for %s", path);
 
-	interpsst = resample_float32(sst, lat, acspo);
-	resize(interpsst, interpsst, Size(), 0.20, 0.20);
-	gray2rgb(interpsst, rgb, COLORMAP_JET);
-	imwrite(savefilename(path), rgb);
-	
-	//dumpmat("interpsst.bin", interpsst);
+	logprintf("resampling...\n");
+	sst = resample_float32(sst, lat, acspo);
+	sst.convertTo(sst, CV_64F);
+dumpmat("sst.bin", sst);
 
-/*
-	avgfilter(interpsst, avgsst, 7);
-	logprintf("gradmag...");
-	gradientmag(interpsst, gradmag);
+	logprintf("avgfilter...\n");
+	avgfilter(sst, avgsst, 7);
+dumpmat("avgsst.bin", avgsst);
+	logprintf("gradmag...\n");
+	gradientmag(sst, gradmag);
+dumpmat("gradmag.bin", gradmag);
 
-	//D = interpsst - avgsst;
-	//(interpsst < 270) | 
-	// threshold (sst-avgsst) by 1
+	logprintf("localmax...\n");
+	localmax(gradmag, lam2, lam1, 1);
+dumpmat("lam2.bin", lam2);
 
+	D = sst - avgsst;
+dumpmat("D.bin", D);
+	easyclouds = (sst < 270) | (gradmag > GRAD_THRESH) | (abs(D) > EDGE_THRESH);
+dumpmat("easyclouds.bin", easyclouds);
 
-	dumpmat("avgsst.bin", avgsst);
-*/
+	easyfronts = (sst > 270) & (gradmag > GRAD_THRESH) & (abs(D) < EDGE_THRESH)
+		& (lam2 < -0.05);
+dumpmat("easyfronts.bin", easyfronts);
+
+	maskf = (easyclouds != 0) & (easyfronts == 0);
+dumpmat("maskf.bin", maskf);
+
+	logprintf("connected components...\n");
+	nlabels = connectedComponentsWithStats(maskf, labels, stats, centoids, 8, CV_32S);
+dumpmat("labels.bin", labels);
+	logprintf("number of connected components: %d\n", nlabels);
+	for(i = 0; i < min(10, nlabels); i++){
+		logprintf("connected component %d area: %d\n", i, stats.at<int>(i, CC_STAT_AREA));
+	}
+
 
 /*
 	logprintf("dilate...");
@@ -186,16 +203,6 @@ main(int argc, char **argv)
 
 	logprintf("laplacian...");
 	laplacian(interpsst, sstlap);
-
-	logprintf("localmax...");
-	localmax(gradmag, high, low, 1);
-
-	logprintf("saving output...");
-	dumpmat("gradmag.bin", gradmag);
-	dumpmat("high.bin", high);
-	dumpmat("low.bin", low);
-
-	logprintf("done...");
 
 	clipsst(rfilt);
 	cmapimshow("Rangefilt SST", rfilt, COLORMAP_JET);

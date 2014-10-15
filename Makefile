@@ -14,6 +14,7 @@ SPT_OFILES = \
 	io.o\
 	resample.o\
 	spt.o\
+	connectedcomponents.o\
 
 SAVEANOMALY_OFILES = \
 	utils.o\
@@ -21,8 +22,9 @@ SAVEANOMALY_OFILES = \
 	resample.o\
 	saveanomaly.o\
 
-HFILES = spt.h
-
+HFILES = spt.h\
+	connectedcomponents.h\
+	
 
 all: $(SPT) $(SAVEANOMALY)
 
