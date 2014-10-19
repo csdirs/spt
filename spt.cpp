@@ -1,5 +1,13 @@
 #include "spt.h"
 
+#define GRAD_THRESH 0.3
+#define GRAD_LOW 0.1
+#define SST_LOW 270
+#define EDGE_THRESH 1
+
+#define TQ_STEP 2
+#define DQ_STEP 0.5
+
 void
 clipsst(Mat &sst)
 {
@@ -128,44 +136,15 @@ savefilename(char *path)
 	return estrdup(buf);
 }
 
-#define GRAD_THRESH 0.3
-#define EDGE_THRESH 1
-
-int
-main(int argc, char **argv)
+void
+findfronts(Mat &sst, Mat &gradmag)
 {
-	Mat sst, lat, elem, sstdil, sstero, rfilt, sstlap, sind;
-	Mat acspo, landmask, gradmag, lam1, lam2;
-	Mat avgsst, D, easyclouds, easyfronts, maskf;
-	Mat labels, stats, centoids;
-	int i, ncid, n, nlabels;
-	char *path;
-
-	if(argc != 2)
-		eprintf("usage: %s granule\n", argv[0]);
-	path = argv[1];
+	Mat avgsst, lam2, lam1, D, easyclouds, easyfronts, maskf, labels, stats, centoids;
+	int i, nlabels;
 	
-	n = nc_open(path, NC_NOWRITE, &ncid);
-	if(n != NC_NOERR)
-		ncfatal(n, "nc_open failed for %s", path);
-	sst = readvar(ncid, "sst_regression");
-	lat = readvar(ncid, "latitude");
-	acspo = readvar(ncid, "acspo_mask");
-	n = nc_close(ncid);
-	if(n != NC_NOERR)
-		ncfatal(n, "nc_close failed for %s", path);
-
-	logprintf("resampling...\n");
-	sst = resample_float32(sst, lat, acspo);
-	sst.convertTo(sst, CV_64F);
-dumpmat("sst.bin", sst);
-
 	logprintf("avgfilter...\n");
 	avgfilter(sst, avgsst, 7);
 dumpmat("avgsst.bin", avgsst);
-	logprintf("gradmag...\n");
-	gradientmag(sst, gradmag);
-dumpmat("gradmag.bin", gradmag);
 
 	logprintf("localmax...\n");
 	localmax(gradmag, lam2, lam1, 1);
@@ -190,6 +169,123 @@ dumpmat("labels.bin", labels);
 	for(i = 0; i < min(10, nlabels); i++){
 		logprintf("connected component %d area: %d\n", i, stats.at<int>(i, CC_STAT_AREA));
 	}
+}
+
+void
+quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat &TQ, Mat &DQ)
+{
+	int i;
+	double *sst, *gm, *delta;
+	short *tq, *dq;
+	
+	CV_Assert(_sst.type() == CV_64FC1);
+	CV_Assert(_gradmag.type() == CV_64FC1);
+	CV_Assert(_delta.type() == CV_64FC1);
+	
+	TQ.create(_sst.size(), CV_16SC1);
+	DQ.create(_sst.size(), CV_16SC1);
+	
+	sst = (double*)_sst.data;
+	gm = (double*)_gradmag.data;
+	delta = (double*)_delta.data;
+	tq = (short*)TQ.data;
+	dq = (short*)DQ.data;
+	for(i = 0; i < (int)_sst.total(); i++){
+		tq[i] = dq[i] = -1;
+		
+		if((gm[i] < GRAD_LOW) & (sst[i] > SST_LOW) & (delta[i] > -0.5)){
+			tq[i] = cvRound((sst[i] - SST_LOW) / TQ_STEP);
+			dq[i] = cvRound((delta[i] + 1) / DQ_STEP);
+		}
+	}
+}
+
+void
+quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta)
+{
+	int i, t, d, tqmax, dqmax, nlabels;
+	Mat _mask, labels, stats, centoids;
+	short *tq, *dq;
+	uchar *mask;
+	
+	CV_Assert(TQ.type() == CV_16SC1);
+	CV_Assert(DQ.type() == CV_16SC1);
+	CV_Assert(_lat.type() == CV_64FC1);
+	CV_Assert(_lon.type() == CV_64FC1);
+	CV_Assert(_sst.type() == CV_64FC1);
+	CV_Assert(_delta.type() == CV_64FC1);
+	
+	// compute max of tq (tqmax) and max of dq (dqmax)
+	tq = (short*)TQ.data;
+	dq = (short*)DQ.data;
+	tqmax = tq[0];
+	dqmax = dq[0];
+	for(i = 1; i < (int)TQ.total(); i++){
+		if(tq[i] > tqmax)
+			tqmax = tq[i];
+		if(dq[i] > dqmax)
+			dqmax = dq[i];
+	}
+	
+	_mask.create(TQ.size(), CV_8UC1);
+	mask = (uchar*)_mask.data;
+	for(t = 0; t < tqmax; t++){
+		for(d = 0; d < dqmax; d++){
+			// create mask for (t, d)
+			for(i = 0; i < (int)_mask.total(); i++)
+				mask[i] = tq[i] == t && dq[i] == d ? 255 : 0;
+			
+			nlabels = connectedComponentsWithStats(_mask, labels, stats, centoids, 8, CV_32S);
+			//dumpmat
+		}
+	}
+}
+
+int
+main(int argc, char **argv)
+{
+	Mat sst, lat, m15, m16, elem, sstdil, sstero, rfilt, sstlap, sind;
+	Mat acspo, landmask, gradmag, delta, TQ, DQ;
+	int ncid, n;
+	char *path;
+
+	if(argc != 2)
+		eprintf("usage: %s granule\n", argv[0]);
+	path = argv[1];
+	
+	n = nc_open(path, NC_NOWRITE, &ncid);
+	if(n != NC_NOERR)
+		ncfatal(n, "nc_open failed for %s", path);
+	sst = readvar(ncid, "sst_regression");
+	lat = readvar(ncid, "latitude");
+	acspo = readvar(ncid, "acspo_mask");
+	m15 = readvar(ncid, "brightness_temp_chM15");
+	m16 = readvar(ncid, "brightness_temp_chM16");
+	n = nc_close(ncid);
+	if(n != NC_NOERR)
+		ncfatal(n, "nc_close failed for %s", path);
+
+	logprintf("resampling...\n");
+	sst = resample_float32(sst, lat, acspo);
+	sst.convertTo(sst, CV_64F);
+dumpmat("sst.bin", sst);
+
+	m15 = resample_float32(m15, lat, acspo);
+	m16 = resample_float32(m16, lat, acspo);
+	delta = m15 - m16;
+	delta.convertTo(delta, CV_64F);
+dumpmat("m15.bin", m15);
+dumpmat("m16.bin", m16);
+dumpmat("delta.bin", delta);
+	
+	logprintf("gradmag...\n");
+	gradientmag(sst, gradmag);
+dumpmat("gradmag.bin", gradmag);
+
+	quantize_sst_delta(sst, gradmag, delta, TQ, DQ);
+dumpmat("TQ.bin", TQ);
+dumpmat("DQ.bin", DQ);
+
 
 
 /*

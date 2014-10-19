@@ -14,8 +14,9 @@ enum { CC_STAT_LEFT   = 0,
        CC_STAT_MAX    = 5
      };
 
-int connectedComponents(InputArray _img, OutputArray _labels, int connectivity, int ltype);
-int connectedComponentsWithStats(InputArray _img, OutputArray _labels, OutputArray statsv,
-                                     OutputArray centroids, int connectivity, int ltype);
+int connectedComponents(InputArray _img, OutputArray _labels,
+	int connectivity, int ltype);
+int connectedComponentsWithStats(InputArray _img, OutputArray _labels,
+	OutputArray statsv, OutputArray centroids, int connectivity, int ltype);
 
 }	// namespace cv
