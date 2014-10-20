@@ -201,15 +201,16 @@ quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat 
 }
 
 void
-quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta)
+quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_anomaly)
 {
-	int i, t, d, tqmax, dqmax, nlabels;
-	Mat _mask, _labels, stats, centoids, _bigcomp, _feat;
-	int *labels;
-	double *lat, *lon, *feat_lat, *feat_lon;
+	int i, t, d, tqmax, dqmax, nlabels, lab;
+	Mat _mask, _labels, stats, centoids, _bigcomp, _feat, _count, _avgsst, _avgdelta, _avganom;
+	int *labels, *count;
+	double *lat, *lon, *sst, *anom, *delta, *avgsst, *avgdelta, *avganom,
+		*feat, *feat_lat, *feat_lon, *feat_sst, *feat_delta, *feat_anom;
 	short *tq, *dq;
 	uchar *mask, *bigcomp;
-	char name[100];
+	//char name[100];
 	
 	CV_Assert(TQ.type() == CV_16SC1);
 	CV_Assert(DQ.type() == CV_16SC1);
@@ -217,6 +218,7 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 	CV_Assert(_lon.type() == CV_64FC1);
 	CV_Assert(_sst.type() == CV_64FC1);
 	CV_Assert(_delta.type() == CV_64FC1);
+	CV_Assert(_anomaly.type() == CV_64FC1);
 	
 	// compute max of tq (tqmax) and max of dq (dqmax)
 	tq = (short*)TQ.data;
@@ -233,6 +235,10 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 	_mask.create(TQ.size(), CV_8UC1);
 	_bigcomp.create(_sst.total(), 1, CV_8UC1);
 	_feat.create(5, _sst.total(), CV_64FC1);
+	_count.create(_sst.total(), 1, CV_32SC1);
+	_avgsst.create(_sst.total(), 1, CV_64FC1);
+	_avgdelta.create(_sst.total(), 1, CV_64FC1);
+	_avganom.create(_sst.total(), 1, CV_64FC1);
 	
 logprintf("lat rows=%d cols=%d total=%d; sst rows=%d cols=%d total=%d\n",
 _lat.rows, _lat.cols, _lat.total(), _sst.rows, _sst.cols, _sst.total());
@@ -241,8 +247,22 @@ _lat.rows, _lat.cols, _lat.total(), _sst.rows, _sst.cols, _sst.total());
 	bigcomp = (uchar*)_bigcomp.data;
 	lat = (double*)_lat.data;
 	lon = (double*)_lon.data;
+	feat = (double*)_feat.data;
 	feat_lat = (double*)_feat.ptr(0);
 	feat_lon = (double*)_feat.ptr(1);
+	feat_sst = (double*)_feat.ptr(2);
+	feat_delta = (double*)_feat.ptr(3);
+	feat_anom = (double*)_feat.ptr(4);
+	count = (int*)_count.data;
+	sst = (double*)_sst.data;
+	delta = (double*)_delta.data;
+	anom = (double*)_anomaly.data;
+	avgsst = (double*)_avgsst.data;
+	avgdelta = (double*)_avgdelta.data;
+	avganom = (double*)_avganom.data;
+	
+	for(i = 0; i < (int)_feat.total(); i++)
+		feat[i] = NAN;
 	
 	for(t = 0; t < tqmax; t++){
 		for(d = 0; d < dqmax; d++){
@@ -259,25 +279,51 @@ _lat.rows, _lat.cols, _lat.total(), _sst.rows, _sst.cols, _sst.total());
 			printf("# t=%2d/%d, d=%2d/%d, nlabels=%d\n",
 				t+1, tqmax, d+1, dqmax, nlabels);
 		
-			for(i = 0; i < nlabels; i++)
-				bigcomp[i] = stats.at<int>(i, CC_STAT_AREA) >= 200 ? 255: 0;
+			for(lab = 0; lab < nlabels; lab++)
+				bigcomp[lab] = stats.at<int>(lab, CC_STAT_AREA) >= 200 ? 255: 0;
+			
+			memset(avgsst, 0, sizeof(*avgsst)*_sst.total());
+			memset(avgdelta, 0, sizeof(*avgdelta)*_sst.total());
+			memset(avganom, 0, sizeof(*avganom)*_sst.total());
+			memset(count, 0, sizeof(*count)*_sst.total());
 			
 			for(i = 0; i < (int)_sst.total(); i++){
-				if(!mask[i] || !bigcomp[labels[i]])
-					continue;
-				lon[i] = lat[i];
-				feat_lat[i] = lat[i];
-				feat_lon[i] = lon[i];
+				lab = labels[i];
+				if(mask[i] && bigcomp[lab]
+				&& !isnan(sst[i]) && !isnan(anom[i]) && !isnan(delta[i])){
+					avgsst[lab] += sst[i];
+					avgdelta[lab] += delta[i];
+					avganom[lab] += anom[i];
+					count[lab]++;
+				}
+			}
+			for(lab = 0; lab < nlabels; lab++){
+				if(bigcomp[lab]){
+					avgsst[lab] /= count[lab];
+					avgdelta[lab] /= count[lab];
+					avganom[lab] /= count[lab];
+				}
+			}
+			for(i = 0; i < (int)_sst.total(); i++){
+				lab = labels[i];
+				if(mask[i] && bigcomp[lab]){
+					feat_lat[i] = lat[i];
+					feat_lon[i] = lon[i];
+					feat_sst[i] = avgsst[lab];
+					feat_delta[i] = avgdelta[lab];
+					feat_anom[i] = avganom[lab];
+				}
 			}
 		}
 		fflush(stdout);
 	}
+	savenpy("feat.npy", _feat);
 }
 
 int
 main(int argc, char **argv)
 {
-	Mat sst, lat, lon, m15, m16, elem, sstdil, sstero, rfilt, sstlap, sind;
+	Mat sst, reynolds, lat, lon, m15, m16, anomaly, elem, sstdil, sstero, rfilt, sstlap, sind;
 	Mat acspo, landmask, gradmag, delta, TQ, DQ;
 	int ncid, n;
 	char *path;
@@ -290,6 +336,7 @@ main(int argc, char **argv)
 	if(n != NC_NOERR)
 		ncfatal(n, "nc_open failed for %s", path);
 	sst = readvar(ncid, "sst_regression");
+	reynolds = readvar(ncid, "sst_reynolds");
 	lat = readvar(ncid, "latitude");
 	lon = readvar(ncid, "longitude");
 	acspo = readvar(ncid, "acspo_mask");
@@ -303,16 +350,18 @@ main(int argc, char **argv)
 	sst = resample_float32(sst, lat, acspo);
 	sst.convertTo(sst, CV_64F);
 savenpy("sst.npy", sst);
+	
+	reynolds.convertTo(reynolds, CV_64F);
+	anomaly = sst - reynolds;
+savenpy("reynolds.npy", reynolds);
 
 	m15 = resample_float32(m15, lat, acspo);
 	m16 = resample_float32(m16, lat, acspo);
 	delta = m15 - m16;
 	delta.convertTo(delta, CV_64F);
+savenpy("delta.npy", delta);
 	lat.convertTo(lat, CV_64F);
 	lon.convertTo(lon, CV_64F);
-savenpy("m15.npy", m15);
-savenpy("m16.npy", m16);
-savenpy("delta.npy", delta);
 	
 	logprintf("gradmag...\n");
 	gradientmag(sst, gradmag);
@@ -321,7 +370,7 @@ savenpy("gradmag.npy", gradmag);
 	quantize_sst_delta(sst, gradmag, delta, TQ, DQ);
 savenpy("TQ.npy", TQ);
 savenpy("DQ.npy", DQ);
-	quantized_features(TQ, DQ, lat, lon, sst, delta);
+	quantized_features(TQ, DQ, lat, lon, sst, delta, anomaly);
 
 
 
