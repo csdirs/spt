@@ -45,7 +45,7 @@ void gray2rgb(Mat &src, Mat &dst, int cmap);
 void cmapimshow(string name, Mat &img, int cmap);
 
 // io.cpp
-void dumpmat(const char *filename, Mat &m);
+void savebin(const char *filename, Mat &m);
+void savenpy(const char *filename, Mat &mat);
 Mat readvar(int ncid, const char *name);
 void ncfatal(int n, const char *fmt, ...);
-void savenpy(const char *filename, Mat &mat);

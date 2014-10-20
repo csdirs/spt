@@ -46,7 +46,7 @@ readvar(int ncid, const char *name)
 }
 
 void
-dumpmat(const char *filename, Mat &m)
+savebin(const char *filename, Mat &m)
 {
 	int n;
 	FILE *f;
@@ -95,7 +95,7 @@ bigendian()
 	return ((uchar*)&n)[0] == 4;
 }
 
-uchar NPY_MAGIC[] = {0x93, 'N', 'U', 'M', 'P', 'Y', 0x01, 0x00};
+static uchar NPY_MAGIC[] = {0x93, 'N', 'U', 'M', 'P', 'Y', 0x01, 0x00};
 
 void
 savenpy(const char *filename, Mat &mat)

@@ -144,27 +144,27 @@ findfronts(Mat &sst, Mat &gradmag)
 	
 	logprintf("avgfilter...\n");
 	avgfilter(sst, avgsst, 7);
-dumpmat("avgsst.bin", avgsst);
+savebin("avgsst.bin", avgsst);
 
 	logprintf("localmax...\n");
 	localmax(gradmag, lam2, lam1, 1);
-dumpmat("lam2.bin", lam2);
+savebin("lam2.bin", lam2);
 
 	D = sst - avgsst;
-dumpmat("D.bin", D);
+savebin("D.bin", D);
 	easyclouds = (sst < 270) | (gradmag > GRAD_THRESH) | (abs(D) > EDGE_THRESH);
-dumpmat("easyclouds.bin", easyclouds);
+savebin("easyclouds.bin", easyclouds);
 
 	easyfronts = (sst > 270) & (gradmag > GRAD_THRESH) & (abs(D) < EDGE_THRESH)
 		& (lam2 < -0.05);
-dumpmat("easyfronts.bin", easyfronts);
+savebin("easyfronts.bin", easyfronts);
 
 	maskf = (easyclouds != 0) & (easyfronts == 0);
-dumpmat("maskf.bin", maskf);
+savebin("maskf.bin", maskf);
 
 	logprintf("connected components...\n");
 	nlabels = connectedComponentsWithStats(maskf, labels, stats, centoids, 8, CV_32S);
-dumpmat("labels.bin", labels);
+savebin("labels.bin", labels);
 	logprintf("number of connected components: %d\n", nlabels);
 	for(i = 0; i < min(10, nlabels); i++){
 		logprintf("connected component %d area: %d\n", i, stats.at<int>(i, CC_STAT_AREA));
@@ -236,7 +236,7 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 				mask[i] = tq[i] == t && dq[i] == d ? 255 : 0;
 			
 			nlabels = connectedComponentsWithStats(_mask, labels, stats, centoids, 8, CV_32S);
-			//dumpmat
+			//savebin
 		}
 	}
 }
@@ -275,17 +275,17 @@ return 0;
 	m16 = resample_float32(m16, lat, acspo);
 	delta = m15 - m16;
 	delta.convertTo(delta, CV_64F);
-dumpmat("m15.bin", m15);
-dumpmat("m16.bin", m16);
-dumpmat("delta.bin", delta);
+savebin("m15.bin", m15);
+savebin("m16.bin", m16);
+savebin("delta.bin", delta);
 	
 	logprintf("gradmag...\n");
 	gradientmag(sst, gradmag);
-dumpmat("gradmag.bin", gradmag);
+savebin("gradmag.bin", gradmag);
 
 	quantize_sst_delta(sst, gradmag, delta, TQ, DQ);
-dumpmat("TQ.bin", TQ);
-dumpmat("DQ.bin", DQ);
+savebin("TQ.bin", TQ);
+savebin("DQ.bin", DQ);
 
 
 
