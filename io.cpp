@@ -66,6 +66,87 @@ dumpmat(const char *filename, Mat &m)
 	fclose(f);
 }
 
+static void
+put2(uint16_t v, uchar *a)
+{
+	a[0] = v & 0xFF;
+	a[1] = (v >> 8) & 0xFF;
+}
+
+static const char*
+npytype(Mat &mat)
+{
+	switch(mat.type()){
+	default:	return NULL;
+	case CV_8UC1:	return "u1"; break;
+	case CV_8SC1:	return "i1"; break;
+	case CV_16UC1:	return "u2"; break;
+	case CV_16SC1:	return "i2"; break;
+	case CV_32SC1:	return "i4"; break;
+	case CV_32FC1:	return "f4"; break;
+	case CV_64FC1:	return "f8"; break;
+	}
+}	
+
+static int
+bigendian()
+{
+	uint32_t n = 0x04030201;
+	return ((uchar*)&n)[0] == 4;
+}
+
+uchar NPY_MAGIC[] = {0x93, 'N', 'U', 'M', 'P', 'Y', 0x01, 0x00};
+
+void
+savenpy(const char *filename, Mat &mat)
+{
+	FILE *f;
+	int n, npad, nprefix;
+	char hdr[200], pad[16];
+	uchar len[2];
+	const char *type;
+	
+	type = npytype(mat);
+	if(type == NULL)
+		eprintf("unsupported type: %s\n", type2str(mat.type()));
+	
+	snprintf(hdr, nelem(hdr),
+		"{'descr': '%c%s', 'fortran_order': False, 'shape': (%d, %d),}",
+		bigendian() ? '>' : '<', type, mat.rows, mat.cols);
+	hdr[nelem(hdr)-1] = '\0';
+	
+	// magic + header length + header + '\n'
+	nprefix = nelem(NPY_MAGIC) + 2 + strlen(hdr) + 1;
+	
+	// create the padding required for the header so that
+	// the matrix data is 16-byte aligned
+	npad = ((nprefix+16-1)/16)*16 - nprefix;
+	memset(pad, ' ', npad);
+	pad[npad] = '\0';
+
+	// length of header + pad + '\n'
+	put2(strlen(hdr) + npad + 1, len);
+	
+	
+	f = fopen(filename, "w");
+	if(f == NULL)
+		eprintf("fopen %s:", filename);
+	
+	n = fwrite(NPY_MAGIC, sizeof(*NPY_MAGIC), nelem(NPY_MAGIC), f);
+	n += fwrite(len, sizeof(*len), nelem(len), f);
+	n += fprintf(f, "%s%s\n", hdr, pad);
+	if(n != nprefix+npad){
+		fclose(f);
+		eprintf("wrote failed:");
+	}
+	n = fwrite(mat.data, mat.elemSize1(), mat.total(), f);
+	if(n != (int)mat.total()){
+		fclose(f);
+		eprintf("wrote %d/%d items; write failed:", n, mat.total());
+	}
+	fclose(f);
+}
+
 void
 ncfatal(int n, const char *fmt, ...)
 {

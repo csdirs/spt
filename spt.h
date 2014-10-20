@@ -48,3 +48,4 @@ void cmapimshow(string name, Mat &img, int cmap);
 void dumpmat(const char *filename, Mat &m);
 Mat readvar(int ncid, const char *name);
 void ncfatal(int n, const char *fmt, ...);
+void savenpy(const char *filename, Mat &mat);

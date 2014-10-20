@@ -268,7 +268,8 @@ main(int argc, char **argv)
 	logprintf("resampling...\n");
 	sst = resample_float32(sst, lat, acspo);
 	sst.convertTo(sst, CV_64F);
-dumpmat("sst.bin", sst);
+savenpy("sst.npy", sst);
+return 0;
 
 	m15 = resample_float32(m15, lat, acspo);
 	m16 = resample_float32(m16, lat, acspo);
