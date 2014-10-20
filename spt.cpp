@@ -144,27 +144,27 @@ findfronts(Mat &sst, Mat &gradmag)
 	
 	logprintf("avgfilter...\n");
 	avgfilter(sst, avgsst, 7);
-savebin("avgsst.bin", avgsst);
+savenpy("avgsst.npy", avgsst);
 
 	logprintf("localmax...\n");
 	localmax(gradmag, lam2, lam1, 1);
-savebin("lam2.bin", lam2);
+savenpy("lam2.npy", lam2);
 
 	D = sst - avgsst;
-savebin("D.bin", D);
+savenpy("D.npy", D);
 	easyclouds = (sst < 270) | (gradmag > GRAD_THRESH) | (abs(D) > EDGE_THRESH);
-savebin("easyclouds.bin", easyclouds);
+savenpy("easyclouds.npy", easyclouds);
 
 	easyfronts = (sst > 270) & (gradmag > GRAD_THRESH) & (abs(D) < EDGE_THRESH)
 		& (lam2 < -0.05);
-savebin("easyfronts.bin", easyfronts);
+savenpy("easyfronts.npy", easyfronts);
 
 	maskf = (easyclouds != 0) & (easyfronts == 0);
-savebin("maskf.bin", maskf);
+savenpy("maskf.npy", maskf);
 
 	logprintf("connected components...\n");
 	nlabels = connectedComponentsWithStats(maskf, labels, stats, centoids, 8, CV_32S);
-savebin("labels.bin", labels);
+savenpy("labels.npy", labels);
 	logprintf("number of connected components: %d\n", nlabels);
 	for(i = 0; i < min(10, nlabels); i++){
 		logprintf("connected component %d area: %d\n", i, stats.at<int>(i, CC_STAT_AREA));
@@ -236,7 +236,7 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 				mask[i] = tq[i] == t && dq[i] == d ? 255 : 0;
 			
 			nlabels = connectedComponentsWithStats(_mask, labels, stats, centoids, 8, CV_32S);
-			//savebin
+			//savenpy
 		}
 	}
 }
@@ -269,23 +269,22 @@ main(int argc, char **argv)
 	sst = resample_float32(sst, lat, acspo);
 	sst.convertTo(sst, CV_64F);
 savenpy("sst.npy", sst);
-return 0;
 
 	m15 = resample_float32(m15, lat, acspo);
 	m16 = resample_float32(m16, lat, acspo);
 	delta = m15 - m16;
 	delta.convertTo(delta, CV_64F);
-savebin("m15.bin", m15);
-savebin("m16.bin", m16);
-savebin("delta.bin", delta);
+savenpy("m15.npy", m15);
+savenpy("m16.npy", m16);
+savenpy("delta.npy", delta);
 	
 	logprintf("gradmag...\n");
 	gradientmag(sst, gradmag);
-savebin("gradmag.bin", gradmag);
+savenpy("gradmag.npy", gradmag);
 
 	quantize_sst_delta(sst, gradmag, delta, TQ, DQ);
-savebin("TQ.bin", TQ);
-savebin("DQ.bin", DQ);
+savenpy("TQ.npy", TQ);
+savenpy("DQ.npy", DQ);
 
 
 

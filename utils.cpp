@@ -27,11 +27,11 @@ logprintf(const char *fmt, ...)
 	time(&now);
 	t = ctime(&now);
 	// omit '\n' from time when printing
-	printf("%.*s ", (int)strlen(t)-1, t);
+	printf("# %.*s ", (int)strlen(t)-1, t);
 	
 	fflush(stdout);
 	va_start(args, fmt);
-	vfprintf(stderr, fmt, args);
+	vprintf(fmt, args);
 	va_end(args);
 }
 

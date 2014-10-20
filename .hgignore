@@ -6,3 +6,4 @@ saveanomaly
 *.nc
 *.png
 *.bin
+*.npy
