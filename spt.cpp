@@ -204,9 +204,12 @@ void
 quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta)
 {
 	int i, t, d, tqmax, dqmax, nlabels;
-	Mat _mask, labels, stats, centoids;
+	Mat _mask, _labels, stats, centoids, _bigcomp, _feat;
+	int *labels;
+	double *lat, *lon, *feat_lat, *feat_lon;
 	short *tq, *dq;
-	uchar *mask;
+	uchar *mask, *bigcomp;
+	char name[100];
 	
 	CV_Assert(TQ.type() == CV_16SC1);
 	CV_Assert(DQ.type() == CV_16SC1);
@@ -228,23 +231,53 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 	}
 	
 	_mask.create(TQ.size(), CV_8UC1);
+	_bigcomp.create(_sst.total(), 1, CV_8UC1);
+	_feat.create(5, _sst.total(), CV_64FC1);
+	
+logprintf("lat rows=%d cols=%d total=%d; sst rows=%d cols=%d total=%d\n",
+_lat.rows, _lat.cols, _lat.total(), _sst.rows, _sst.cols, _sst.total());
+	
 	mask = (uchar*)_mask.data;
+	bigcomp = (uchar*)_bigcomp.data;
+	lat = (double*)_lat.data;
+	lon = (double*)_lon.data;
+	feat_lat = (double*)_feat.ptr(0);
+	feat_lon = (double*)_feat.ptr(1);
+	
 	for(t = 0; t < tqmax; t++){
 		for(d = 0; d < dqmax; d++){
 			// create mask for (t, d)
 			for(i = 0; i < (int)_mask.total(); i++)
 				mask[i] = tq[i] == t && dq[i] == d ? 255 : 0;
 			
-			nlabels = connectedComponentsWithStats(_mask, labels, stats, centoids, 8, CV_32S);
-			//savenpy
+			nlabels = connectedComponentsWithStats(_mask, _labels, stats, centoids, 8, CV_32S);
+			if(nlabels <= 1)
+				continue;
+			labels = (int*)_labels.data;
+			//snprintf(name, nelem(name), "labels_t%02d_d%02d.npy", t, d);
+			//savenpy(name, labels);
+			printf("# t=%2d/%d, d=%2d/%d, nlabels=%d\n",
+				t+1, tqmax, d+1, dqmax, nlabels);
+		
+			for(i = 0; i < nlabels; i++)
+				bigcomp[i] = stats.at<int>(i, CC_STAT_AREA) >= 200 ? 255: 0;
+			
+			for(i = 0; i < (int)_sst.total(); i++){
+				if(!mask[i] || !bigcomp[labels[i]])
+					continue;
+				lon[i] = lat[i];
+				feat_lat[i] = lat[i];
+				feat_lon[i] = lon[i];
+			}
 		}
+		fflush(stdout);
 	}
 }
 
 int
 main(int argc, char **argv)
 {
-	Mat sst, lat, m15, m16, elem, sstdil, sstero, rfilt, sstlap, sind;
+	Mat sst, lat, lon, m15, m16, elem, sstdil, sstero, rfilt, sstlap, sind;
 	Mat acspo, landmask, gradmag, delta, TQ, DQ;
 	int ncid, n;
 	char *path;
@@ -258,6 +291,7 @@ main(int argc, char **argv)
 		ncfatal(n, "nc_open failed for %s", path);
 	sst = readvar(ncid, "sst_regression");
 	lat = readvar(ncid, "latitude");
+	lon = readvar(ncid, "longitude");
 	acspo = readvar(ncid, "acspo_mask");
 	m15 = readvar(ncid, "brightness_temp_chM15");
 	m16 = readvar(ncid, "brightness_temp_chM16");
@@ -274,6 +308,8 @@ savenpy("sst.npy", sst);
 	m16 = resample_float32(m16, lat, acspo);
 	delta = m15 - m16;
 	delta.convertTo(delta, CV_64F);
+	lat.convertTo(lat, CV_64F);
+	lon.convertTo(lon, CV_64F);
 savenpy("m15.npy", m15);
 savenpy("m16.npy", m16);
 savenpy("delta.npy", delta);
@@ -285,6 +321,7 @@ savenpy("gradmag.npy", gradmag);
 	quantize_sst_delta(sst, gradmag, delta, TQ, DQ);
 savenpy("TQ.npy", TQ);
 savenpy("DQ.npy", DQ);
+	quantized_features(TQ, DQ, lat, lon, sst, delta);
 
 
 
