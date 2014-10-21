@@ -7,7 +7,8 @@ LDFLAGS = -lnetcdf\
 	-lopencv_core\
 	-lopencv_imgproc\
 	-lopencv_highgui\
-	-lopencv_contrib
+	-lopencv_contrib\
+	-lopencv_flann
 
 SPT_OFILES = \
 	utils.o\

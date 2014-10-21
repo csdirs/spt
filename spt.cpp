@@ -5,7 +5,7 @@
 #define SST_LOW 270
 #define EDGE_THRESH 1
 
-#define TQ_STEP 2
+#define TQ_STEP 3
 #define DQ_STEP 0.5
 
 void
@@ -66,11 +66,12 @@ void
 localmax(Mat &gradmag, Mat &high, Mat &low, int sigma)
 {
 	int i, j, x, y, winsz;
-	double e, a, dd, mu1, mu2, *Dxxp, *Dxyp, *Dyyp, *highp, *lowp;
+	double e, a, dd, mu1, mu2;
+	float *Dxxp, *Dxyp, *Dyyp, *highp, *lowp;
 	Mat DGaussxx, DGaussxy, DGaussyy,
 		Dxx, Dxy, Dyy;
 	
-	CV_Assert(gradmag.type() == CV_64FC1);
+	CV_Assert(gradmag.type() == CV_32FC1);
 
 	winsz = 2*(NStd*sigma) + 1;
 	DGaussxx = Mat::zeros(winsz, winsz, CV_64FC1);
@@ -95,13 +96,17 @@ localmax(Mat &gradmag, Mat &high, Mat &low, int sigma)
 	filter2D(gradmag, Dxy, -1, DGaussxy);
 	filter2D(gradmag, Dyy, -1, DGaussyy);
 
-	high.create(Dxx.rows, Dxx.cols, CV_64FC1);
-	low.create(Dxx.rows, Dxx.cols, CV_64FC1);
-	highp = (double*)high.data;
-	lowp = (double*)low.data;
-	Dxxp = (double*)Dxx.data;
-	Dxyp = (double*)Dxy.data;
-	Dyyp = (double*)Dyy.data;
+	CV_Assert(Dxx.type() == CV_32FC1);
+	CV_Assert(Dxy.type() == CV_32FC1);
+	CV_Assert(Dyy.type() == CV_32FC1);
+	
+	high.create(Dxx.rows, Dxx.cols, CV_32FC1);
+	low.create(Dxx.rows, Dxx.cols, CV_32FC1);
+	highp = (float*)high.data;
+	lowp = (float*)low.data;
+	Dxxp = (float*)Dxx.data;
+	Dxyp = (float*)Dxy.data;
+	Dyyp = (float*)Dyy.data;
 	for(i = 0; i < Dxx.rows*Dxx.cols; i++){
 		a = Dxxp[i] + Dyyp[i];
 		dd = sqrt(SQ(Dxxp[i] - Dyyp[i]) + 4*SQ(Dxyp[i]));
@@ -201,10 +206,10 @@ quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat 
 }
 
 void
-quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_anomaly)
+quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_anomaly, Mat &_feat)
 {
 	int i, t, d, tqmax, dqmax, nlabels, lab;
-	Mat _mask, _labels, stats, centoids, _bigcomp, _feat, _count, _avgsst, _avgdelta, _avganom;
+	Mat _mask, _labels, stats, centoids, _bigcomp, _count, _avgsst, _avgdelta, _avganom;
 	int *labels, *count;
 	float *lat, *lon, *sst, *delta, *anom,
 		*feat, *feat_lat, *feat_lon, *feat_sst, *feat_delta, *feat_anom;
@@ -318,14 +323,22 @@ _lat.rows, _lat.cols, _lat.total(), _sst.rows, _sst.cols, _sst.total());
 		}
 		fflush(stdout);
 	}
-	savenpy("feat.npy", _feat);
+	transpose(_feat, _feat);
+}
+
+static void
+nnlabel(Mat &feat, Mat &lat, Mat &lon, Mat &sst, Mat &delta, Mat &anomaly, Mat &sstclust)
+{
+	
+	flann::Index idx(feat, flann::AutotunedIndexParams());
+	
 }
 
 int
 main(int argc, char **argv)
 {
 	Mat sst, reynolds, lat, lon, m15, m16, anomaly, elem, sstdil, sstero, rfilt, sstlap, sind;
-	Mat acspo, landmask, gradmag, delta, TQ, DQ;
+	Mat acspo, landmask, gradmag, delta, TQ, DQ, feat, sstclust, lam1, lam2;
 	int ncid, n;
 	char *path;
 
@@ -363,12 +376,20 @@ savenpy("delta.npy", delta);
 	gradientmag(sst, gradmag);
 savenpy("gradmag.npy", gradmag);
 
+	logprintf("localmax...\n");
+	localmax(gradmag, lam2, lam1, 1);
+savenpy("lam2.npy", lam2);
+
 	quantize_sst_delta(sst, gradmag, delta, TQ, DQ);
 savenpy("TQ.npy", TQ);
 savenpy("DQ.npy", DQ);
-	quantized_features(TQ, DQ, lat, lon, sst, delta, anomaly);
+	quantized_features(TQ, DQ, lat, lon, sst, delta, anomaly, feat);
+savenpy("feat.npy", feat);
 
+//	nnlabel(feat, lat, lon, sst, delta, anomaly, sstclust);
+//savenpy("sstclust.npy", sstclust);
 
+//easyfronts = (sst > 270) & (gradmag > 0.3) & (lam2 < -0.01)
 
 /*
 	logprintf("dilate...");
