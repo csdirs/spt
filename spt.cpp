@@ -42,9 +42,9 @@ avgfilter(Mat &src, Mat &dst, int ksize)
 void
 gradientmag(Mat &img, Mat &gm)
 {
-    Mat h = (Mat_<double>(5,1) <<
+	Mat h = (Mat_<double>(5,1) <<
 		0.036420, 0.248972, 0.429217, 0.248972, 0.036420);
-    Mat hp = (Mat_<double>(5,1) <<
+	Mat hp = (Mat_<double>(5,1) <<
 		0.108415, 0.280353, 0, -0.280353, -0.108415);
 	Mat tmp, dX, dY, ht, hpt;
 
@@ -175,19 +175,19 @@ void
 quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat &TQ, Mat &DQ)
 {
 	int i;
-	double *sst, *gm, *delta;
+	float *sst, *gm, *delta;
 	short *tq, *dq;
 	
-	CV_Assert(_sst.type() == CV_64FC1);
-	CV_Assert(_gradmag.type() == CV_64FC1);
-	CV_Assert(_delta.type() == CV_64FC1);
+	CV_Assert(_sst.type() == CV_32FC1);
+	CV_Assert(_gradmag.type() == CV_32FC1);
+	CV_Assert(_delta.type() == CV_32FC1);
 	
 	TQ.create(_sst.size(), CV_16SC1);
 	DQ.create(_sst.size(), CV_16SC1);
 	
-	sst = (double*)_sst.data;
-	gm = (double*)_gradmag.data;
-	delta = (double*)_delta.data;
+	sst = (float*)_sst.data;
+	gm = (float*)_gradmag.data;
+	delta = (float*)_delta.data;
 	tq = (short*)TQ.data;
 	dq = (short*)DQ.data;
 	for(i = 0; i < (int)_sst.total(); i++){
@@ -206,19 +206,20 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 	int i, t, d, tqmax, dqmax, nlabels, lab;
 	Mat _mask, _labels, stats, centoids, _bigcomp, _feat, _count, _avgsst, _avgdelta, _avganom;
 	int *labels, *count;
-	double *lat, *lon, *sst, *anom, *delta, *avgsst, *avgdelta, *avganom,
+	float *lat, *lon, *sst, *delta, *anom,
 		*feat, *feat_lat, *feat_lon, *feat_sst, *feat_delta, *feat_anom;
+	double *avgsst, *avgdelta, *avganom;
 	short *tq, *dq;
 	uchar *mask, *bigcomp;
 	//char name[100];
 	
 	CV_Assert(TQ.type() == CV_16SC1);
 	CV_Assert(DQ.type() == CV_16SC1);
-	CV_Assert(_lat.type() == CV_64FC1);
-	CV_Assert(_lon.type() == CV_64FC1);
-	CV_Assert(_sst.type() == CV_64FC1);
-	CV_Assert(_delta.type() == CV_64FC1);
-	CV_Assert(_anomaly.type() == CV_64FC1);
+	CV_Assert(_lat.type() == CV_32FC1);
+	CV_Assert(_lon.type() == CV_32FC1);
+	CV_Assert(_sst.type() == CV_32FC1);
+	CV_Assert(_delta.type() == CV_32FC1);
+	CV_Assert(_anomaly.type() == CV_32FC1);
 	
 	// compute max of tq (tqmax) and max of dq (dqmax)
 	tq = (short*)TQ.data;
@@ -234,7 +235,7 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 	
 	_mask.create(TQ.size(), CV_8UC1);
 	_bigcomp.create(_sst.total(), 1, CV_8UC1);
-	_feat.create(5, _sst.total(), CV_64FC1);
+	_feat.create(5, _sst.total(), CV_32FC1);
 	_count.create(_sst.total(), 1, CV_32SC1);
 	_avgsst.create(_sst.total(), 1, CV_64FC1);
 	_avgdelta.create(_sst.total(), 1, CV_64FC1);
@@ -245,18 +246,18 @@ _lat.rows, _lat.cols, _lat.total(), _sst.rows, _sst.cols, _sst.total());
 	
 	mask = (uchar*)_mask.data;
 	bigcomp = (uchar*)_bigcomp.data;
-	lat = (double*)_lat.data;
-	lon = (double*)_lon.data;
-	feat = (double*)_feat.data;
-	feat_lat = (double*)_feat.ptr(0);
-	feat_lon = (double*)_feat.ptr(1);
-	feat_sst = (double*)_feat.ptr(2);
-	feat_delta = (double*)_feat.ptr(3);
-	feat_anom = (double*)_feat.ptr(4);
+	lat = (float*)_lat.data;
+	lon = (float*)_lon.data;
+	feat = (float*)_feat.data;
+	feat_lat = (float*)_feat.ptr(0);
+	feat_lon = (float*)_feat.ptr(1);
+	feat_sst = (float*)_feat.ptr(2);
+	feat_delta = (float*)_feat.ptr(3);
+	feat_anom = (float*)_feat.ptr(4);
 	count = (int*)_count.data;
-	sst = (double*)_sst.data;
-	delta = (double*)_delta.data;
-	anom = (double*)_anomaly.data;
+	sst = (float*)_sst.data;
+	delta = (float*)_delta.data;
+	anom = (float*)_anomaly.data;
 	avgsst = (double*)_avgsst.data;
 	avgdelta = (double*)_avgdelta.data;
 	avganom = (double*)_avganom.data;
@@ -348,20 +349,15 @@ main(int argc, char **argv)
 
 	logprintf("resampling...\n");
 	sst = resample_float32(sst, lat, acspo);
-	sst.convertTo(sst, CV_64F);
-savenpy("sst.npy", sst);
-	
-	reynolds.convertTo(reynolds, CV_64F);
 	anomaly = sst - reynolds;
-savenpy("reynolds.npy", reynolds);
+savenpy("sst.npy", sst);
+savenpy("anomaly.npy", anomaly);
+	
 
 	m15 = resample_float32(m15, lat, acspo);
 	m16 = resample_float32(m16, lat, acspo);
 	delta = m15 - m16;
-	delta.convertTo(delta, CV_64F);
 savenpy("delta.npy", delta);
-	lat.convertTo(lat, CV_64F);
-	lon.convertTo(lon, CV_64F);
 	
 	logprintf("gradmag...\n");
 	gradientmag(sst, gradmag);
