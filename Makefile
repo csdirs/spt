@@ -1,5 +1,5 @@
 SPT = spt
-SAVEANOMALY = saveanomaly
+SAVERESAMPLED = saveresampled
 CXX = g++
 CXXFLAGS = -g -Wall -march=native -O2
 LD = g++
@@ -21,16 +21,16 @@ SAVEANOMALY_OFILES = \
 	utils.o\
 	io.o\
 	resample.o\
-	saveanomaly.o\
+	saveresampled.o\
 
 HFILES = spt.h\
 	connectedcomponents.h\
 	
 
-all: $(SPT) $(SAVEANOMALY)
+all: $(SPT) $(SAVERESAMPLED)
 
-$(SAVEANOMALY): $(SAVEANOMALY_OFILES)
-	$(LD) -o $(SAVEANOMALY) $(SAVEANOMALY_OFILES) $(LDFLAGS)
+$(SAVERESAMPLED): $(SAVEANOMALY_OFILES)
+	$(LD) -o $(SAVERESAMPLED) $(SAVEANOMALY_OFILES) $(LDFLAGS)
 
 $(SPT): $(SPT_OFILES)
 	$(LD) -o $(SPT) $(SPT_OFILES) $(LDFLAGS)
@@ -39,4 +39,4 @@ $(SPT): $(SPT_OFILES)
 	$(CXX) -c $(CXXFLAGS) $<
 
 clean:
-	rm -f $(SPT) $(SAVEANOMALY) $(SAVEANOMALY_OFILES) $(SPT_OFILES)
+	rm -f $(SPT) $(SAVERESAMPLED) $(SAVEANOMALY_OFILES) $(SPT_OFILES)
