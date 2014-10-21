@@ -27,7 +27,7 @@ resample_unsort_(Mat &sind, Mat &img)
 
 // Returns the unsorted image of the sorted image img.
 // Sind is the image of sort indices.
-static Mat
+Mat
 resample_unsort(Mat &sind, Mat &img)
 {
 	switch(img.type()){
@@ -75,7 +75,7 @@ resample_sort_(Mat &sind, Mat &img)
 
 // Returns the sorted image of the unsorted image img.
 // Sind is the image of sort indices.
-static Mat
+Mat
 resample_sort(Mat &sind, Mat &img)
 {
 	switch(img.type()){
@@ -297,7 +297,7 @@ argsortlat(Mat &lat, int swathsize, Mat &sortidx)
 }
 
 
-void
+static void
 benchmark_avgfilter3(Mat &img, Mat &sind, int N)
 {
 	int i;
@@ -318,9 +318,9 @@ benchmark_avgfilter3(Mat &img, Mat &sind, int N)
 // Resample VIIRS swatch image img with corresponding
 // latitude image lat, and ACSPO mask acspo.
 Mat
-resample_float32(Mat &img, Mat &lat, Mat &acspo)
+resample_float32(Mat &img, Mat &lat, Mat &acspo, Mat &sind)
 {
-	Mat sind, landmask;
+	Mat landmask;
 
 	CV_Assert(img.type() == CV_32FC1);
 	CV_Assert(lat.type() == CV_32FC1);

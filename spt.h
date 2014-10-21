@@ -34,7 +34,9 @@ enum {
 };
 
 // resample.cpp
-Mat resample_float32(Mat &img, Mat &lat, Mat &acspo);
+Mat resample_float32(Mat &img, Mat &lat, Mat &acspo, Mat &sind);
+Mat resample_unsort(Mat &sind, Mat &img);
+Mat resample_sort(Mat &sind, Mat &img);
 
 // utils.cpp
 void eprintf(const char *fmt, ...);

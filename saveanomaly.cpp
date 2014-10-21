@@ -1,60 +1,59 @@
 #include "spt.h"
 
 void
-saveanomaly(char *path, Mat &mat)
+writevar(int ncid, const char *name, Mat &mat)
 {
-	int n, ncid, dims[2], vid;
+	int n, vid;
 	
-	CV_Assert(mat.channels() == 1);
-	if(mat.depth() != CV_32F)
-		mat.convertTo(mat, CV_32F);
-	
-	n = nc_create(path, NC_NOCLOBBER|NC_NETCDF4, &ncid);
-	if (n != NC_NOERR)
-		ncfatal(n, "nc_create failed for %s", path);
-	n = nc_def_dim(ncid, "scan_lines_along_track", mat.rows, &dims[0]);
-	if (n != NC_NOERR)
-		ncfatal(n, "nc_def_dim failed");
-	n = nc_def_dim(ncid, "pixels_across_track", mat.cols, &dims[1]);
-	if (n != NC_NOERR)
-		ncfatal(n, "nc_def_dim failed");
-	n = nc_def_var (ncid, "anomaly", NC_FLOAT, nelem(dims), dims, &vid);
-	if (n != NC_NOERR)
-		ncfatal(n, "nc_def_var failed");
-	n = nc_put_var_float(ncid, vid, (float*)mat.data);
+	n = nc_inq_varid(ncid, name, &vid);
+	if(n != NC_NOERR)
+		ncfatal(n, "nc_inq_varid failed for variable %s", name);
+
+	switch(mat.type()){
+	default:
+		eprintf("invalid type %s", type2str(mat.type()));
+	case CV_32FC1:
+		n = nc_put_var_float(ncid, vid, (float*)mat.data);
+		break;
+	case CV_8UC1:
+		n = nc_put_var_uchar(ncid, vid, (uchar*)mat.data);
+		break;
+	}
 	if (n != NC_NOERR)
 		ncfatal(n, "nc_put_var_float failed");
-	n = nc_close(ncid);
-	if(n != NC_NOERR)
-		ncfatal(n, "nc_close failed for %s", path);
 }
 
 int
 main(int argc, char **argv)
 {
-	Mat lat, acspo, sst, reynolds, anomaly, rgb;
+	Mat lat, lon, acspo, sst, sind;
 	int ncid, n;
-	char *inpath, *outpath;
+	char *path;
 
-	if(argc != 3)
-		eprintf("usage: %s granule outfile\n", argv[0]);
-	inpath = argv[1];
-	outpath = argv[2];
+	if(argc != 2)
+		eprintf("usage: %s granule\n", argv[0]);
+	path = argv[1];
 	
-	n = nc_open(inpath, NC_NOWRITE, &ncid);
-	if(n != NC_NOERR)
-		ncfatal(n, "nc_open failed for %s", inpath);
+	n = nc_open(path, NC_WRITE, &ncid);
+	if (n != NC_NOERR)
+		ncfatal(n, "nc_open failed for %s", path);
+	
 	lat = readvar(ncid, "latitude");
+	lon = readvar(ncid, "longitude");
 	acspo = readvar(ncid, "acspo_mask");
 	sst = readvar(ncid, "sst_regression");
-	reynolds = readvar(ncid, "sst_reynolds");
+	
+	sst = resample_float32(sst, lat, acspo, sind);
+	lon = resample_sort(sind, lon);
+	
+	writevar(ncid, "acspo_mask", acspo);
+	writevar(ncid, "latitude", lat);
+	writevar(ncid, "longitude", lon);
+	writevar(ncid, "sst_regression", sst);
+	
 	n = nc_close(ncid);
 	if(n != NC_NOERR)
-		ncfatal(n, "nc_close failed for %s", inpath);
+		ncfatal(n, "nc_close failed for %s", path);
 	
-	sst = resample_float32(sst, lat, acspo);
-	anomaly = sst - reynolds;
-	
-	saveanomaly(outpath, anomaly);
 	return 0;
 }

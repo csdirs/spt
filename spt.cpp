@@ -361,14 +361,14 @@ main(int argc, char **argv)
 		ncfatal(n, "nc_close failed for %s", path);
 
 	logprintf("resampling...\n");
-	sst = resample_float32(sst, lat, acspo);
+	sst = resample_float32(sst, lat, acspo, sind);
 	anomaly = sst - reynolds;
 savenpy("sst.npy", sst);
 savenpy("anomaly.npy", anomaly);
 	
 
-	m15 = resample_float32(m15, lat, acspo);
-	m16 = resample_float32(m16, lat, acspo);
+	m15 = resample_float32(m15, lat, acspo, sind);
+	m16 = resample_float32(m16, lat, acspo, sind);
 	delta = m15 - m16;
 savenpy("delta.npy", delta);
 	
