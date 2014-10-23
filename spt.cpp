@@ -217,12 +217,6 @@ quantized_features_td(Size size, int t, int d, short *tq, short *dq, float *sst,
 	int i, nlabels, lab, *labels, *count;
 	uchar *mask, *bigcomp;
 	
-	feat_lat = (float*)_feat.ptr(0);
-	feat_lon = (float*)_feat.ptr(1);
-	feat_sst = (float*)_feat.ptr(2);
-	feat_delta = (float*)_feat.ptr(3);
-	feat_anom = (float*)_feat.ptr(4);
-	
 	// create mask for (t, d)
 	_mask.create(size, CV_8UC1);
 	mask = (uchar*)_mask.data;
@@ -232,8 +226,7 @@ quantized_features_td(Size size, int t, int d, short *tq, short *dq, float *sst,
 	nlabels = connectedComponentsWithStats(_mask, _labels, stats, centoids, 8, CV_32S);
 	if(nlabels <= 1)
 		return;
-	printf("# t=%2d, d=%2d, nlabels=%d\n",
-		t+1, d+1, nlabels);
+//printf("# t=%2d, d=%2d, nlabels=%d\n", t+1, d+1, nlabels);
 
 	_bigcomp.create(nlabels, 1, CV_8UC1);
 	_count.create(nlabels, 1, CV_32SC1);
@@ -273,6 +266,12 @@ quantized_features_td(Size size, int t, int d, short *tq, short *dq, float *sst,
 			avganom[lab] /= count[lab];
 		}
 	}
+	feat_lat = (float*)_feat.ptr(0);
+	feat_lon = (float*)_feat.ptr(1);
+	feat_sst = (float*)_feat.ptr(2);
+	feat_delta = (float*)_feat.ptr(3);
+	feat_anom = (float*)_feat.ptr(4);
+	
 	for(i = 0; i < size.area(); i++){
 		lab = labels[i];
 		if(mask[i] && bigcomp[lab]){
@@ -314,8 +313,8 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 	
 	_feat.create(5, _sst.total(), CV_32FC1);
 	
-logprintf("lat rows=%d cols=%d total=%d; sst rows=%d cols=%d total=%d\n",
-_lat.rows, _lat.cols, _lat.total(), _sst.rows, _sst.cols, _sst.total());
+//logprintf("lat rows=%d cols=%d total=%d; sst rows=%d cols=%d total=%d\n",
+//	_lat.rows, _lat.cols, _lat.total(), _sst.rows, _sst.cols, _sst.total());
 	
 	lat = (float*)_lat.data;
 	lon = (float*)_lon.data;
@@ -334,7 +333,6 @@ _lat.rows, _lat.cols, _lat.total(), _sst.rows, _sst.cols, _sst.total());
 			quantized_features_td(_sst.size(), t, d, tq, dq,
 				sst, delta, anom, lat, lon, _feat);
 		}
-		fflush(stdout);
 	}
 	transpose(_feat, _feat);
 }
@@ -380,6 +378,7 @@ savenpy("sst.npy", sst);
 savenpy("anomaly.npy", anomaly);
 	
 
+	logprintf("delta...\n");
 	m15 = resample_float32(m15, lat, acspo, sind);
 	m16 = resample_float32(m16, lat, acspo, sind);
 	delta = m15 - m16;
@@ -393,9 +392,11 @@ savenpy("gradmag.npy", gradmag);
 	localmax(gradmag, lam2, lam1, 1);
 savenpy("lam2.npy", lam2);
 
+	logprintf("quantize sst delta...\n");
 	quantize_sst_delta(sst, gradmag, delta, TQ, DQ);
 savenpy("TQ.npy", TQ);
 savenpy("DQ.npy", DQ);
+	logprintf("quantized featured...\n");
 	quantized_features(TQ, DQ, lat, lon, sst, delta, anomaly, feat);
 savenpy("feat.npy", feat);
 
