@@ -338,11 +338,59 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 }
 
 static void
-nnlabel(Mat &feat, Mat &lat, Mat &lon, Mat &sst, Mat &delta, Mat &anomaly, Mat &sstclust)
+nnlabel(Mat &_feat, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_anomaly, Mat &_sstclust)
 {
+	int i, k, *indices;
+	float *vs, *vd, *lat, *lon, *sst, *delta, *anom, *sstclust;
+	std::vector<float> q(5), dists(1);
+	std::vector<int> ind(1);
+	flann::SearchParams sparam;
+	Mat _indices;
 	
-	flann::Index idx(feat, flann::AutotunedIndexParams());
+	CV_Assert(_feat.type() == CV_32FC1 && _feat.isContinuous()
+		&& _feat.cols == (int)q.size());
+	CV_Assert(_lat.type() == CV_32FC1 && _lat.isContinuous());
+	CV_Assert(_lon.type() == CV_32FC1 && _lon.isContinuous());
+	CV_Assert(_sst.type() == CV_32FC1 && _sst.isContinuous());
+	CV_Assert(_delta.type() == CV_32FC1 && _delta.isContinuous());
+	CV_Assert(_anomaly.type() == CV_32FC1 && _anomaly.isContinuous());
 	
+	_indices.create(_feat.rows, 1, CV_32SC1);
+	indices = (int*)_indices.data;
+	k = 0;
+	for(i = 0; i < _feat.rows; i++){
+		vs = (float*)_feat.ptr(i);
+		if(!isnan(vs[0]) && i != k){
+			vd = (float*)_feat.ptr(k);
+			memmove(vd, vs, _feat.cols*sizeof(*vd));
+			indices[k] = i;
+			k++;
+		}
+	}
+	
+	_feat = _feat.rowRange(0, k);
+	logprintf("building nearest neighbor indices...\n");
+	flann::Index idx(_feat, flann::AutotunedIndexParams());
+	logprintf("searching nearest neighbor indices...\n");
+	
+	lat = (float*)_lat.data;
+	lon = (float*)_lon.data;
+	sst = (float*)_sst.data;
+	delta = (float*)_delta.data;
+	anom = (float*)_anomaly.data;
+	_sstclust.create(_sst.total(), 1, CV_32FC1);
+	CV_Assert(_sstclust.isContinuous());
+	sstclust = (float*)_sstclust.data;
+
+	for(i = 0; i < (int)_sst.total(); i++){
+		q[0] = lat[i];
+		q[1] = lon[i];
+		q[2] = sst[i];
+		q[3] = delta[i];
+		q[4] = anom[i]; // TODO: remove
+		idx.knnSearch(q, ind, dists, 1, sparam);
+		sstclust[i] = sst[indices[ind[0]]];
+	}
 }
 
 int
@@ -407,8 +455,8 @@ savenpy("DQ.npy", DQ);
 	quantized_features(TQ, DQ, lat, lon, sst, delta, anomaly, feat);
 savenpy("feat.npy", feat);
 
-//	nnlabel(feat, lat, lon, sst, delta, anomaly, sstclust);
-//savenpy("sstclust.npy", sstclust);
+	nnlabel(feat, lat, lon, sst, delta, anomaly, sstclust);
+savenpy("sstclust.npy", sstclust);
 
 //easyfronts = (sst > 270) & (gradmag > 0.3) & (lam2 < -0.01)
 
