@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#include <omp.h>
 
 #include "connectedcomponents.h"
 

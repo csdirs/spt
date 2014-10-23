@@ -1,8 +1,8 @@
 SPT = spt
 SAVERESAMPLED = saveresampled
 CXX = g++
-CXXFLAGS = -g -Wall -march=native -O2
-LD = g++
+CXXFLAGS = -g -Wall -march=native -O2 -fopenmp
+LD = g++ -fopenmp
 LDFLAGS = -lnetcdf\
 	-lopencv_core\
 	-lopencv_imgproc\

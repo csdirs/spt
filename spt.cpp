@@ -205,18 +205,92 @@ quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat 
 	}
 }
 
+// Run connected component for t == tq and d == dq, and save the features
+// for the connected components in _feat.
+void
+quantized_features_td(Size size, int t, int d, short *tq, short *dq, float *sst, float *delta, float *anom,
+	float *lat, float *lon, Mat &_feat)
+{
+	Mat _mask, _labels, stats, centoids, _bigcomp, _count, _avgsst, _avgdelta, _avganom;
+	double *avgsst, *avgdelta, *avganom;
+	float *feat_lat, *feat_lon, *feat_sst, *feat_delta, *feat_anom;
+	int i, nlabels, lab, *labels, *count;
+	uchar *mask, *bigcomp;
+	
+	feat_lat = (float*)_feat.ptr(0);
+	feat_lon = (float*)_feat.ptr(1);
+	feat_sst = (float*)_feat.ptr(2);
+	feat_delta = (float*)_feat.ptr(3);
+	feat_anom = (float*)_feat.ptr(4);
+	
+	// create mask for (t, d)
+	_mask.create(size, CV_8UC1);
+	mask = (uchar*)_mask.data;
+	for(i = 0; i < (int)_mask.total(); i++)
+		mask[i] = tq[i] == t && dq[i] == d ? 255 : 0;
+	
+	nlabels = connectedComponentsWithStats(_mask, _labels, stats, centoids, 8, CV_32S);
+	if(nlabels <= 1)
+		return;
+	printf("# t=%2d, d=%2d, nlabels=%d\n",
+		t+1, d+1, nlabels);
+
+	_bigcomp.create(nlabels, 1, CV_8UC1);
+	_count.create(nlabels, 1, CV_32SC1);
+	_avgsst.create(nlabels, 1, CV_64FC1);
+	_avgdelta.create(nlabels, 1, CV_64FC1);
+	_avganom.create(nlabels, 1, CV_64FC1);
+
+	labels = (int*)_labels.data;
+	bigcomp = (uchar*)_bigcomp.data;
+	count = (int*)_count.data;
+	avgsst = (double*)_avgsst.data;
+	avgdelta = (double*)_avgdelta.data;
+	avganom = (double*)_avganom.data;
+	
+	for(lab = 0; lab < nlabels; lab++)
+		bigcomp[lab] = stats.at<int>(lab, CC_STAT_AREA) >= 200 ? 255: 0;
+	
+	memset(count, 0, sizeof(*count)*nlabels);
+	memset(avgsst, 0, sizeof(*avgsst)*nlabels);
+	memset(avgdelta, 0, sizeof(*avgdelta)*nlabels);
+	memset(avganom, 0, sizeof(*avganom)*nlabels);
+	
+	for(i = 0; i < size.area(); i++){
+		lab = labels[i];
+		if(mask[i] && bigcomp[lab]
+		&& !isnan(sst[i]) && !isnan(anom[i]) && !isnan(delta[i])){
+			avgsst[lab] += sst[i];
+			avgdelta[lab] += delta[i];
+			avganom[lab] += anom[i];
+			count[lab]++;
+		}
+	}
+	for(lab = 0; lab < nlabels; lab++){
+		if(bigcomp[lab]){
+			avgsst[lab] /= count[lab];
+			avgdelta[lab] /= count[lab];
+			avganom[lab] /= count[lab];
+		}
+	}
+	for(i = 0; i < size.area(); i++){
+		lab = labels[i];
+		if(mask[i] && bigcomp[lab]){
+			feat_lat[i] = lat[i];
+			feat_lon[i] = lon[i];
+			feat_sst[i] = avgsst[lab];
+			feat_delta[i] = avgdelta[lab];
+			feat_anom[i] = avganom[lab];
+		}
+	}
+}
+
 void
 quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_anomaly, Mat &_feat)
 {
-	int i, t, d, tqmax, dqmax, nlabels, lab;
-	Mat _mask, _labels, stats, centoids, _bigcomp, _count, _avgsst, _avgdelta, _avganom;
-	int *labels, *count;
-	float *lat, *lon, *sst, *delta, *anom,
-		*feat, *feat_lat, *feat_lon, *feat_sst, *feat_delta, *feat_anom;
-	double *avgsst, *avgdelta, *avganom;
+	int i, tqmax, dqmax;
+	float *lat, *lon, *sst, *delta, *anom, *feat;
 	short *tq, *dq;
-	uchar *mask, *bigcomp;
-	//char name[100];
 	
 	CV_Assert(TQ.type() == CV_16SC1);
 	CV_Assert(DQ.type() == CV_16SC1);
@@ -238,88 +312,27 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 			dqmax = dq[i];
 	}
 	
-	_mask.create(TQ.size(), CV_8UC1);
-	_bigcomp.create(_sst.total(), 1, CV_8UC1);
 	_feat.create(5, _sst.total(), CV_32FC1);
-	_count.create(_sst.total(), 1, CV_32SC1);
-	_avgsst.create(_sst.total(), 1, CV_64FC1);
-	_avgdelta.create(_sst.total(), 1, CV_64FC1);
-	_avganom.create(_sst.total(), 1, CV_64FC1);
 	
 logprintf("lat rows=%d cols=%d total=%d; sst rows=%d cols=%d total=%d\n",
 _lat.rows, _lat.cols, _lat.total(), _sst.rows, _sst.cols, _sst.total());
 	
-	mask = (uchar*)_mask.data;
-	bigcomp = (uchar*)_bigcomp.data;
 	lat = (float*)_lat.data;
 	lon = (float*)_lon.data;
 	feat = (float*)_feat.data;
-	feat_lat = (float*)_feat.ptr(0);
-	feat_lon = (float*)_feat.ptr(1);
-	feat_sst = (float*)_feat.ptr(2);
-	feat_delta = (float*)_feat.ptr(3);
-	feat_anom = (float*)_feat.ptr(4);
-	count = (int*)_count.data;
 	sst = (float*)_sst.data;
 	delta = (float*)_delta.data;
 	anom = (float*)_anomaly.data;
-	avgsst = (double*)_avgsst.data;
-	avgdelta = (double*)_avgdelta.data;
-	avganom = (double*)_avganom.data;
 	
 	for(i = 0; i < (int)_feat.total(); i++)
 		feat[i] = NAN;
 	
-	for(t = 0; t < tqmax; t++){
-		for(d = 0; d < dqmax; d++){
-			// create mask for (t, d)
-			for(i = 0; i < (int)_mask.total(); i++)
-				mask[i] = tq[i] == t && dq[i] == d ? 255 : 0;
-			
-			nlabels = connectedComponentsWithStats(_mask, _labels, stats, centoids, 8, CV_32S);
-			if(nlabels <= 1)
-				continue;
-			labels = (int*)_labels.data;
-			//snprintf(name, nelem(name), "labels_t%02d_d%02d.npy", t, d);
-			//savenpy(name, labels);
-			printf("# t=%2d/%d, d=%2d/%d, nlabels=%d\n",
-				t+1, tqmax, d+1, dqmax, nlabels);
-		
-			for(lab = 0; lab < nlabels; lab++)
-				bigcomp[lab] = stats.at<int>(lab, CC_STAT_AREA) >= 200 ? 255: 0;
-			
-			memset(avgsst, 0, sizeof(*avgsst)*_sst.total());
-			memset(avgdelta, 0, sizeof(*avgdelta)*_sst.total());
-			memset(avganom, 0, sizeof(*avganom)*_sst.total());
-			memset(count, 0, sizeof(*count)*_sst.total());
-			
-			for(i = 0; i < (int)_sst.total(); i++){
-				lab = labels[i];
-				if(mask[i] && bigcomp[lab]
-				&& !isnan(sst[i]) && !isnan(anom[i]) && !isnan(delta[i])){
-					avgsst[lab] += sst[i];
-					avgdelta[lab] += delta[i];
-					avganom[lab] += anom[i];
-					count[lab]++;
-				}
-			}
-			for(lab = 0; lab < nlabels; lab++){
-				if(bigcomp[lab]){
-					avgsst[lab] /= count[lab];
-					avgdelta[lab] /= count[lab];
-					avganom[lab] /= count[lab];
-				}
-			}
-			for(i = 0; i < (int)_sst.total(); i++){
-				lab = labels[i];
-				if(mask[i] && bigcomp[lab]){
-					feat_lat[i] = lat[i];
-					feat_lon[i] = lon[i];
-					feat_sst[i] = avgsst[lab];
-					feat_delta[i] = avgdelta[lab];
-					feat_anom[i] = avganom[lab];
-				}
-			}
+	#pragma omp parallel for
+	for(int t = 0; t < tqmax; t++){
+		#pragma omp parallel for
+		for(int d = 0; d < dqmax; d++){
+			quantized_features_td(_sst.size(), t, d, tq, dq,
+				sst, delta, anom, lat, lon, _feat);
 		}
 		fflush(stdout);
 	}
