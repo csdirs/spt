@@ -2,7 +2,7 @@
 
 template <class T>
 static Mat
-resample_unsort_(Mat &sind, Mat &img)
+resample_unsort_(const Mat &sind, const Mat &img)
 {
 	Mat newimg;
 	int i, j, k;
@@ -28,7 +28,7 @@ resample_unsort_(Mat &sind, Mat &img)
 // Returns the unsorted image of the sorted image img.
 // Sind is the image of sort indices.
 Mat
-resample_unsort(Mat &sind, Mat &img)
+resample_unsort(const Mat &sind, const Mat &img)
 {
 	switch(img.type()){
 	default:
@@ -50,7 +50,7 @@ resample_unsort(Mat &sind, Mat &img)
 
 template <class T>
 static Mat
-resample_sort_(Mat &sind, Mat &img)
+resample_sort_(const Mat &sind, const Mat &img)
 {
 	Mat newimg;
 	int i, j, k;
@@ -76,7 +76,7 @@ resample_sort_(Mat &sind, Mat &img)
 // Returns the sorted image of the unsorted image img.
 // Sind is the image of sort indices.
 Mat
-resample_sort(Mat &sind, Mat &img)
+resample_sort(const Mat &sind, const Mat &img)
 {
 	switch(img.type()){
 	default:
@@ -111,11 +111,13 @@ avg3(double a, double b, double c)
 // where sorted order is not the same as the original order.
 // Sind is the sort indices giving the sort order.
 static Mat
-avgfilter3(Mat &in, Mat &sind)
+avgfilter3(const Mat &in, const Mat &sind)
 {
+	const int *sindp;
+	const float *ip;
 	Mat out;
-	int i, j, rows, cols, *sindp;
-	float *ip, *op;
+	int i, j, rows, cols;
+	float *op;
 
 	CV_Assert(in.type() == CV_32FC1);
 	CV_Assert(sind.type() == CV_32SC1);
@@ -144,7 +146,7 @@ avgfilter3(Mat &in, Mat &sind)
 // Slat is the latitude image, and slandmask is the land mask image.
 // All input arguments must already be sorted.
 static Mat
-resample_interp(Mat &simg, Mat &slat, Mat &slandmask)
+resample_interp(const Mat &simg, const Mat &slat, const Mat &slandmask)
 {
 	int i, j, k, nbuf, *buf;
 	Mat newimg, bufmat;
@@ -216,7 +218,7 @@ typedef enum Pole Pole;
 // Argsort latitude image 'lat' with given swath size.
 // Image of sort indices are return in 'sortidx'.
 static void
-argsortlat(Mat &lat, int swathsize, Mat &sortidx)
+argsortlat(const Mat &lat, int swathsize, Mat &sortidx)
 {
 	int i, j, off, width, height, dir, d, split;
 	Pole pole;
@@ -296,7 +298,7 @@ argsortlat(Mat &lat, int swathsize, Mat &sortidx)
 	}
 }
 
-
+/*
 static void
 benchmark_avgfilter3(Mat &img, Mat &sind, int N)
 {
@@ -314,28 +316,39 @@ benchmark_avgfilter3(Mat &img, Mat &sind, int N)
 		((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec);
 	printf("avgfilter3 took about %.5f seconds; %f ops/sec\n", secs, N/secs);
 }
+*/
 
-// Resample VIIRS swatch image img with corresponding
-// latitude image lat, and ACSPO mask acspo.
-Mat
-resample_float32(Mat &img, Mat &lat, Mat &acspo, Mat &sind)
+void
+resample_init(Resample *r, const Mat &lat, const Mat &acspo)
 {
-	Mat landmask;
-
-	CV_Assert(img.type() == CV_32FC1);
+	Mat sacspo;
+	
 	CV_Assert(lat.type() == CV_32FC1);
 	CV_Assert(acspo.type() == CV_8UC1);
 
-	argsortlat(lat, VIIRS_SWATH_SIZE, sind);
+	if(r == NULL)
+		eprintf("Nil Resample\n");
+	argsortlat(lat, VIIRS_SWATH_SIZE, r->sind);
 
-	img = resample_sort(sind, img);
-//benchmark_avgfilter3(img, sind, 100);
-	img = avgfilter3(img, sind);
-//dumpmat("avgfilter3_new.bin", img);
+	r->slat = resample_sort(r->sind, lat);
+	sacspo = resample_sort(r->sind, acspo);
+	r->slandmask = (sacspo & MaskLand) != 0;
+}
 
-	lat = resample_sort(sind, lat);
-	acspo = resample_sort(sind, acspo);
-	landmask = (acspo & MaskLand) != 0;
+// Resample VIIRS swatch image img with corresponding
+// latitude image lat, and ACSPO mask acspo.
+void
+resample_float32(const Resample *r, const Mat &src, Mat &dst)
+{
+	if(r == NULL)
+		eprintf("Nil Resample\n");
+	
+	CV_Assert(src.type() == CV_32FC1);
 
-	return resample_interp(img, lat, landmask);
+	dst = resample_sort(r->sind, src);
+//benchmark_avgfilter3(src, r->sind, 100);
+	dst = avgfilter3(dst, r->sind);
+//dumpmat("avgfilter3_new.bin", dst);
+
+	dst = resample_interp(dst, r->slat, r->slandmask);
 }

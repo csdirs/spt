@@ -1,9 +1,10 @@
 syntax: glob
 
 spt
-saveanomaly
+saveresampled
 *.o
 *.nc
 *.png
 *.bin
 *.npy
+*.orig

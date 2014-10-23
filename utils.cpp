@@ -47,6 +47,17 @@ estrdup(const char *s)
 	return dup;
 }
 
+void*
+emalloc(size_t n)
+{
+	void *buf;
+
+	buf = malloc(n);
+	if(buf == NULL)
+		eprintf("malloc failed:");
+	return buf;
+}
+
 const char*
 type2str(int type)
 {

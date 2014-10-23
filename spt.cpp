@@ -352,6 +352,7 @@ main(int argc, char **argv)
 	Mat acspo, landmask, gradmag, delta, TQ, DQ, feat, sstclust, lam1, lam2;
 	int ncid, n;
 	char *path;
+	Resample *r;
 
 	if(argc != 2)
 		eprintf("usage: %s granule\n", argv[0]);
@@ -372,15 +373,21 @@ main(int argc, char **argv)
 		ncfatal(n, "nc_close failed for %s", path);
 
 	logprintf("resampling...\n");
-	sst = resample_float32(sst, lat, acspo, sind);
+savenpy("lat_before.npy", lat);
+savenpy("acspo_before.npy", acspo);
+	r = new Resample;
+	resample_init(r, lat, acspo);
+	resample_float32(r, sst, sst);
+savenpy("lat_after.npy", lat);
+savenpy("acspo_after.npy", acspo);
+	resample_float32(r, m15, m15);
+	resample_float32(r, m16, m16);
+	delete r;
+
+	logprintf("anomaly and delta...\n");
 	anomaly = sst - reynolds;
 savenpy("sst.npy", sst);
 savenpy("anomaly.npy", anomaly);
-	
-
-	logprintf("delta...\n");
-	m15 = resample_float32(m15, lat, acspo, sind);
-	m16 = resample_float32(m16, lat, acspo, sind);
 	delta = m15 - m16;
 savenpy("delta.npy", delta);
 	
@@ -437,5 +444,6 @@ savenpy("feat.npy", feat);
 		;
 */
 
+	logprintf("done\n");
 	return 0;
 }

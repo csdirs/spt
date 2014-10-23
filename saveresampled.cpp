@@ -26,9 +26,10 @@ writevar(int ncid, const char *name, Mat &mat)
 int
 main(int argc, char **argv)
 {
-	Mat lat, lon, acspo, sst, sind;
+	Mat lat, slon, acspo, sst, sind;
 	int ncid, n;
 	char *path;
+	Resample r;
 
 	if(argc != 2)
 		eprintf("usage: %s granule\n", argv[0]);
@@ -39,16 +40,17 @@ main(int argc, char **argv)
 		ncfatal(n, "nc_open failed for %s", path);
 	
 	lat = readvar(ncid, "latitude");
-	lon = readvar(ncid, "longitude");
+	slon = readvar(ncid, "longitude");
 	acspo = readvar(ncid, "acspo_mask");
 	sst = readvar(ncid, "sst_regression");
 	
-	sst = resample_float32(sst, lat, acspo, sind);
-	lon = resample_sort(sind, lon);
+	resample_init(&r, lat, acspo);
+	resample_float32(&r, sst, sst);
+	slon = resample_sort(r.sind, slon);
 	
-	writevar(ncid, "acspo_mask", acspo);
-	writevar(ncid, "latitude", lat);
-	writevar(ncid, "longitude", lon);
+	writevar(ncid, "acspo_mask", r.sacspo);
+	writevar(ncid, "latitude", r.slat);
+	writevar(ncid, "longitude", slon);
 	writevar(ncid, "sst_regression", sst);
 	
 	n = nc_close(ncid);

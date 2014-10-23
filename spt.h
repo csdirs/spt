@@ -34,15 +34,22 @@ enum {
 	MODIS_SWATH_SIZE = 10,
 };
 
+typedef struct Resample Resample;
+struct Resample {
+	Mat sind, slat, sacspo, slandmask;
+};
+
 // resample.cpp
-Mat resample_float32(Mat &img, Mat &lat, Mat &acspo, Mat &sind);
-Mat resample_unsort(Mat &sind, Mat &img);
-Mat resample_sort(Mat &sind, Mat &img);
+Mat resample_unsort(const Mat &sind, const Mat &img);
+Mat resample_sort(const Mat &sind, const Mat &img);
+void resample_init(Resample *r, const Mat &lat, const Mat &acspo);
+void resample_float32(const Resample *r, const Mat &src, Mat &dst);
 
 // utils.cpp
 void eprintf(const char *fmt, ...);
 void logprintf(const char *fmt, ...);
 char* estrdup(const char *s);
+void *emalloc(size_t n);
 const char *type2str(int type);
 void gray2rgb(Mat &src, Mat &dst, int cmap);
 void cmapimshow(string name, Mat &img, int cmap);
