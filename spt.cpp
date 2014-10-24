@@ -8,6 +8,14 @@
 #define TQ_STEP 3
 #define DQ_STEP 0.5
 
+enum {
+	FEAT_LAT,
+	FEAT_LON,
+	FEAT_SST,
+	FEAT_DELTA,
+	NFEAT,
+};
+
 void
 clipsst(Mat &sst)
 {
@@ -208,12 +216,12 @@ quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat 
 // Run connected component for t == tq and d == dq, and save the features
 // for the connected components in _feat.
 void
-quantized_features_td(Size size, int t, int d, short *tq, short *dq, float *sst, float *delta, float *anom,
+quantized_features_td(Size size, int t, int d, short *tq, short *dq, float *sst, float *delta,
 	float *lat, float *lon, Mat &_feat)
 {
-	Mat _mask, _labels, stats, centoids, _bigcomp, _count, _avgsst, _avgdelta, _avganom;
-	double *avgsst, *avgdelta, *avganom;
-	float *feat_lat, *feat_lon, *feat_sst, *feat_delta, *feat_anom;
+	Mat _mask, _labels, stats, centoids, _bigcomp, _count, _avgsst, _avgdelta;
+	double *avgsst, *avgdelta;
+	float *feat_lat, *feat_lon, *feat_sst, *feat_delta;
 	int i, nlabels, lab, *labels, *count;
 	uchar *mask, *bigcomp;
 	
@@ -232,14 +240,12 @@ quantized_features_td(Size size, int t, int d, short *tq, short *dq, float *sst,
 	_count.create(nlabels, 1, CV_32SC1);
 	_avgsst.create(nlabels, 1, CV_64FC1);
 	_avgdelta.create(nlabels, 1, CV_64FC1);
-	_avganom.create(nlabels, 1, CV_64FC1);
 
 	labels = (int*)_labels.data;
 	bigcomp = (uchar*)_bigcomp.data;
 	count = (int*)_count.data;
 	avgsst = (double*)_avgsst.data;
 	avgdelta = (double*)_avgdelta.data;
-	avganom = (double*)_avganom.data;
 	
 	for(lab = 0; lab < nlabels; lab++)
 		bigcomp[lab] = stats.at<int>(lab, CC_STAT_AREA) >= 200 ? 255: 0;
@@ -247,15 +253,13 @@ quantized_features_td(Size size, int t, int d, short *tq, short *dq, float *sst,
 	memset(count, 0, sizeof(*count)*nlabels);
 	memset(avgsst, 0, sizeof(*avgsst)*nlabels);
 	memset(avgdelta, 0, sizeof(*avgdelta)*nlabels);
-	memset(avganom, 0, sizeof(*avganom)*nlabels);
 	
 	for(i = 0; i < size.area(); i++){
 		lab = labels[i];
 		if(mask[i] && bigcomp[lab]
-		&& !isnan(sst[i]) && !isnan(anom[i]) && !isnan(delta[i])){
+		&& !isnan(sst[i]) && !isnan(delta[i])){
 			avgsst[lab] += sst[i];
 			avgdelta[lab] += delta[i];
-			avganom[lab] += anom[i];
 			count[lab]++;
 		}
 	}
@@ -263,14 +267,12 @@ quantized_features_td(Size size, int t, int d, short *tq, short *dq, float *sst,
 		if(bigcomp[lab]){
 			avgsst[lab] /= count[lab];
 			avgdelta[lab] /= count[lab];
-			avganom[lab] /= count[lab];
 		}
 	}
-	feat_lat = (float*)_feat.ptr(0);
-	feat_lon = (float*)_feat.ptr(1);
-	feat_sst = (float*)_feat.ptr(2);
-	feat_delta = (float*)_feat.ptr(3);
-	feat_anom = (float*)_feat.ptr(4);
+	feat_lat = (float*)_feat.ptr(FEAT_LAT);
+	feat_lon = (float*)_feat.ptr(FEAT_LON);
+	feat_sst = (float*)_feat.ptr(FEAT_SST);
+	feat_delta = (float*)_feat.ptr(FEAT_DELTA);
 	
 	for(i = 0; i < size.area(); i++){
 		lab = labels[i];
@@ -279,16 +281,15 @@ quantized_features_td(Size size, int t, int d, short *tq, short *dq, float *sst,
 			feat_lon[i] = lon[i];
 			feat_sst[i] = avgsst[lab];
 			feat_delta[i] = avgdelta[lab];
-			feat_anom[i] = avganom[lab];
 		}
 	}
 }
 
 void
-quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_anomaly, Mat &_feat)
+quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_feat)
 {
 	int i, tqmax, dqmax;
-	float *lat, *lon, *sst, *delta, *anom, *feat;
+	float *lat, *lon, *sst, *delta, *feat;
 	short *tq, *dq;
 	
 	CV_Assert(TQ.type() == CV_16SC1);
@@ -297,7 +298,6 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 	CV_Assert(_lon.type() == CV_32FC1);
 	CV_Assert(_sst.type() == CV_32FC1);
 	CV_Assert(_delta.type() == CV_32FC1);
-	CV_Assert(_anomaly.type() == CV_32FC1);
 	
 	// compute max of tq (tqmax) and max of dq (dqmax)
 	tq = (short*)TQ.data;
@@ -311,7 +311,7 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 			dqmax = dq[i];
 	}
 	
-	_feat.create(5, _sst.total(), CV_32FC1);
+	_feat.create(NFEAT, _sst.total(), CV_32FC1);
 	
 //logprintf("lat rows=%d cols=%d total=%d; sst rows=%d cols=%d total=%d\n",
 //	_lat.rows, _lat.cols, _lat.total(), _sst.rows, _sst.cols, _sst.total());
@@ -321,7 +321,6 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 	feat = (float*)_feat.data;
 	sst = (float*)_sst.data;
 	delta = (float*)_delta.data;
-	anom = (float*)_anomaly.data;
 	
 	for(i = 0; i < (int)_feat.total(); i++)
 		feat[i] = NAN;
@@ -331,30 +330,34 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 		#pragma omp parallel for
 		for(int d = 0; d < dqmax; d++){
 			quantized_features_td(_sst.size(), t, d, tq, dq,
-				sst, delta, anom, lat, lon, _feat);
+				sst, delta, lat, lon, _feat);
 		}
 	}
 	transpose(_feat, _feat);
 }
 
 static void
-nnlabel(Mat &_feat, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_anomaly, Mat &_sstclust)
+nnlabel(Mat &_feat, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_sstclust)
 {
 	int i, k, *indices;
-	float *vs, *vd, *lat, *lon, *sst, *delta, *anom, *sstclust;
-	std::vector<float> q(5), dists(1);
-	std::vector<int> ind(1);
-	flann::SearchParams sparam;
+	float *vs, *vd, *lat, *lon, *sst, *delta, *sstclust;
 	Mat _indices;
+	std::vector<float> q(NFEAT), dists(1);
+	std::vector<int> ind(1);
+	flann::SearchParams sparam(4);
 	
 	CV_Assert(_feat.type() == CV_32FC1 && _feat.isContinuous()
-		&& _feat.cols == (int)q.size());
+		&& _feat.cols == NFEAT);
 	CV_Assert(_lat.type() == CV_32FC1 && _lat.isContinuous());
 	CV_Assert(_lon.type() == CV_32FC1 && _lon.isContinuous());
 	CV_Assert(_sst.type() == CV_32FC1 && _sst.isContinuous());
 	CV_Assert(_delta.type() == CV_32FC1 && _delta.isContinuous());
-	CV_Assert(_anomaly.type() == CV_32FC1 && _anomaly.isContinuous());
 	
+	// copy SST before we remove all the NaNs
+	_sstclust = _feat.col(FEAT_SST).clone();
+	sstclust = (float*)_sstclust.data;
+
+	// remove NaNs from features
 	_indices.create(_feat.rows, 1, CV_32SC1);
 	indices = (int*)_indices.data;
 	k = 0;
@@ -362,7 +365,7 @@ nnlabel(Mat &_feat, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_anomaly,
 		vs = (float*)_feat.ptr(i);
 		if(!isnan(vs[0]) && i != k){
 			vd = (float*)_feat.ptr(k);
-			memmove(vd, vs, _feat.cols*sizeof(*vd));
+			memmove(vd, vs, NFEAT*sizeof(*vd));
 			indices[k] = i;
 			k++;
 		}
@@ -370,26 +373,23 @@ nnlabel(Mat &_feat, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_anomaly,
 	
 	_feat = _feat.rowRange(0, k);
 	logprintf("building nearest neighbor indices...\n");
-	flann::Index idx(_feat, flann::AutotunedIndexParams());
+	flann::Index idx(_feat, flann::KMeansIndexParams(16, 1));
 	logprintf("searching nearest neighbor indices...\n");
 	
 	lat = (float*)_lat.data;
 	lon = (float*)_lon.data;
 	sst = (float*)_sst.data;
 	delta = (float*)_delta.data;
-	anom = (float*)_anomaly.data;
-	_sstclust.create(_sst.total(), 1, CV_32FC1);
-	CV_Assert(_sstclust.isContinuous());
-	sstclust = (float*)_sstclust.data;
 
 	for(i = 0; i < (int)_sst.total(); i++){
-		q[0] = lat[i];
-		q[1] = lon[i];
-		q[2] = sst[i];
-		q[3] = delta[i];
-		q[4] = anom[i]; // TODO: remove
-		idx.knnSearch(q, ind, dists, 1, sparam);
-		sstclust[i] = sst[indices[ind[0]]];
+		if(isnan(sstclust[i]) && !isnan(sst[i])){
+			q[FEAT_LAT] = lat[i];
+			q[FEAT_LON] = lon[i];
+			q[FEAT_SST] = sst[i];
+			q[FEAT_DELTA] = delta[i];
+			idx.knnSearch(q, ind, dists, 1, sparam);
+			sstclust[i] = sstclust[indices[ind[0]]];
+		}
 	}
 }
 
@@ -452,10 +452,10 @@ savenpy("lam2.npy", lam2);
 savenpy("TQ.npy", TQ);
 savenpy("DQ.npy", DQ);
 	logprintf("quantized featured...\n");
-	quantized_features(TQ, DQ, lat, lon, sst, delta, anomaly, feat);
+	quantized_features(TQ, DQ, lat, lon, sst, delta, feat);
 savenpy("feat.npy", feat);
 
-	nnlabel(feat, lat, lon, sst, delta, anomaly, sstclust);
+	nnlabel(feat, lat, lon, sst, delta, sstclust);
 savenpy("sstclust.npy", sstclust);
 
 //easyfronts = (sst > 270) & (gradmag > 0.3) & (lam2 < -0.01)
