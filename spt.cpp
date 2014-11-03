@@ -220,10 +220,13 @@ quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat 
 //	d -- quantized delta value
 //	tq, dq -- quantized SST, delta
 //	sst, delta, lat, lon -- original SST, delta, latitude, longitude
+//	glab -- global label assigned to _labels for (t == tq && d == dq)
+//	glabels -- global labels (output)
 //	_feat -- features (output)
-void
+int
 quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
-	const float *sst, const float *delta, const float *lat, const float *lon, Mat &_feat)
+	const float *sst, const float *delta, const float *lat, const float *lon, int glab,
+	int *glabels, Mat &_feat)
 {
 	Mat _mask, _cclabels, stats, centoids, _bigcomp, _count, _avgsst, _avgdelta;
 	double *avgsst, *avgdelta;
@@ -239,7 +242,7 @@ quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
 	
 	ncc = connectedComponentsWithStats(_mask, _cclabels, stats, centoids, 8, CV_32S);
 	if(ncc <= 1)
-		return;
+		return 0;
 //printf("# t=%2d, d=%2d, ncc=%d\n", t+1, d+1, ncc);
 
 	_bigcomp.create(ncc, 1, CV_8UC1);
@@ -287,14 +290,17 @@ quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
 			feat_lon[i] = lon[i];
 			feat_sst[i] = avgsst[lab];
 			feat_delta[i] = avgdelta[lab];
+			glabels[i] = glab + lab;
 		}
 	}
+	return ncc;
 }
 
 void
-quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_feat)
+quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta,
+	Mat &_glabels, Mat &_feat)
 {
-	int i, tqmax, dqmax;
+	int i, glab, tqmax, dqmax, *glabels;
 	float *lat, *lon, *sst, *delta, *feat;
 	short *tq, *dq;
 	
@@ -317,6 +323,7 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 			dqmax = dq[i];
 	}
 	
+	_glabels.create(_sst.size(), CV_32SC1);
 	_feat.create(NFEAT, _sst.total(), CV_32FC1);
 	
 //logprintf("lat rows=%d cols=%d total=%d; sst rows=%d cols=%d total=%d\n",
@@ -327,16 +334,18 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 	feat = (float*)_feat.data;
 	sst = (float*)_sst.data;
 	delta = (float*)_delta.data;
+	glabels = (int*)_glabels.data;
 	
 	for(i = 0; i < (int)_feat.total(); i++)
 		feat[i] = NAN;
+	for(i = 0; i < (int)_glabels.total(); i++)
+		glabels[i] = -1;
 	
-	#pragma omp parallel for
+	glab = 0;
 	for(int t = 0; t < tqmax; t++){
-		#pragma omp parallel for
 		for(int d = 0; d < dqmax; d++){
-			quantized_features_td(_sst.size(), t, d, tq, dq,
-				sst, delta, lat, lon, _feat);
+			glab += quantized_features_td(_sst.size(), t, d, tq, dq,
+				sst, delta, lat, lon, glab, glabels, _feat);
 		}
 	}
 	transpose(_feat, _feat);
@@ -403,7 +412,7 @@ int
 main(int argc, char **argv)
 {
 	Mat sst, reynolds, lat, lon, m15, m16, anomaly, elem, sstdil, sstero, rfilt, sstlap, sind;
-	Mat acspo, landmask, gradmag, delta, TQ, DQ, feat, sstclust, lam1, lam2;
+	Mat acspo, landmask, gradmag, delta, TQ, DQ, glabels, feat, sstclust, lam1, lam2;
 	int ncid, n;
 	char *path;
 	Resample *r;
@@ -458,7 +467,8 @@ savenpy("lam2.npy", lam2);
 savenpy("TQ.npy", TQ);
 savenpy("DQ.npy", DQ);
 	logprintf("quantized featured...\n");
-	quantized_features(TQ, DQ, lat, lon, sst, delta, feat);
+	quantized_features(TQ, DQ, lat, lon, sst, delta, glabels, feat);
+savenpy("glabels.npy", glabels);
 savenpy("feat.npy", feat);
 
 	nnlabel(feat, lat, lon, sst, delta, sstclust);
