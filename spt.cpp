@@ -363,10 +363,10 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 }
 
 static void
-nnlabel(Mat &_feat, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_sstclust)
+nnlabel(Mat &_feat, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_glabels)
 {
-	int i, k, *indices;
-	float *vs, *vd, *lat, *lon, *sst, *delta, *sstclust;
+	int i, k, *indices, *glabels;
+	float *vs, *vd, *lat, *lon, *sst, *delta;
 	Mat _indices;
 	std::vector<float> q(NFEAT), dists(1);
 	std::vector<int> ind(1);
@@ -378,10 +378,7 @@ nnlabel(Mat &_feat, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_sstclust
 	CV_Assert(_lon.type() == CV_32FC1 && _lon.isContinuous());
 	CV_Assert(_sst.type() == CV_32FC1 && _sst.isContinuous());
 	CV_Assert(_delta.type() == CV_32FC1 && _delta.isContinuous());
-	
-	// copy SST before we remove all the NaNs
-	_sstclust = _feat.col(FEAT_SST).clone();
-	sstclust = (float*)_sstclust.data;
+	CV_Assert(_glabels.type() == CV_32SC1 && _delta.isContinuous());
 
 	// remove NaNs from features
 	_indices.create(_feat.rows, 1, CV_32SC1);
@@ -406,15 +403,17 @@ nnlabel(Mat &_feat, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_sstclust
 	lon = (float*)_lon.data;
 	sst = (float*)_sst.data;
 	delta = (float*)_delta.data;
+	glabels = (int*)_glabels.data;
 
 	for(i = 0; i < (int)_sst.total(); i++){
-		if(isnan(sstclust[i]) && !isnan(sst[i])){
+		if(glabels[i] < 0 && !isnan(sst[i]) && !isnan(delta[i])){
 			q[FEAT_LAT] = lat[i];
 			q[FEAT_LON] = lon[i];
 			q[FEAT_SST] = sst[i];
 			q[FEAT_DELTA] = delta[i];
 			idx.knnSearch(q, ind, dists, 1, sparam);
-			sstclust[i] = sstclust[indices[ind[0]]];
+			if(dists[0] < 10)
+				glabels[i] = glabels[indices[ind[0]]];
 		}
 	}
 }
@@ -423,7 +422,7 @@ int
 main(int argc, char **argv)
 {
 	Mat sst, reynolds, lat, lon, m15, m16, anomaly, elem, sstdil, sstero, rfilt, sstlap, sind;
-	Mat acspo, landmask, gradmag, delta, TQ, DQ, glabels, feat, sstclust, lam1, lam2;
+	Mat acspo, landmask, gradmag, delta, TQ, DQ, glabels, feat, lam1, lam2;
 	int ncid, n;
 	char *path;
 	Resample *r;
@@ -482,8 +481,8 @@ savenpy("DQ.npy", DQ);
 savenpy("glabels.npy", glabels);
 savenpy("feat.npy", feat);
 
-	nnlabel(feat, lat, lon, sst, delta, sstclust);
-savenpy("sstclust.npy", sstclust);
+	nnlabel(feat, lat, lon, sst, delta, glabels);
+savenpy("glabels_nn.npy", glabels);
 
 //easyfronts = (sst > 270) & (gradmag > 0.3) & (lam2 < -0.01)
 
