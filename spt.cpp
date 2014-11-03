@@ -215,14 +215,20 @@ quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat 
 
 // Run connected component for t == tq and d == dq, and save the features
 // for the connected components in _feat.
+//	size -- size of image
+//	t -- quantized SST value
+//	d -- quantized delta value
+//	tq, dq -- quantized SST, delta
+//	sst, delta, lat, lon -- original SST, delta, latitude, longitude
+//	_feat -- features (output)
 void
-quantized_features_td(Size size, int t, int d, short *tq, short *dq, float *sst, float *delta,
-	float *lat, float *lon, Mat &_feat)
+quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
+	const float *sst, const float *delta, const float *lat, const float *lon, Mat &_feat)
 {
-	Mat _mask, _labels, stats, centoids, _bigcomp, _count, _avgsst, _avgdelta;
+	Mat _mask, _cclabels, stats, centoids, _bigcomp, _count, _avgsst, _avgdelta;
 	double *avgsst, *avgdelta;
 	float *feat_lat, *feat_lon, *feat_sst, *feat_delta;
-	int i, nlabels, lab, *labels, *count;
+	int i, ncc, lab, *cclabels, *count;
 	uchar *mask, *bigcomp;
 	
 	// create mask for (t, d)
@@ -231,31 +237,31 @@ quantized_features_td(Size size, int t, int d, short *tq, short *dq, float *sst,
 	for(i = 0; i < (int)_mask.total(); i++)
 		mask[i] = tq[i] == t && dq[i] == d ? 255 : 0;
 	
-	nlabels = connectedComponentsWithStats(_mask, _labels, stats, centoids, 8, CV_32S);
-	if(nlabels <= 1)
+	ncc = connectedComponentsWithStats(_mask, _cclabels, stats, centoids, 8, CV_32S);
+	if(ncc <= 1)
 		return;
-//printf("# t=%2d, d=%2d, nlabels=%d\n", t+1, d+1, nlabels);
+//printf("# t=%2d, d=%2d, ncc=%d\n", t+1, d+1, ncc);
 
-	_bigcomp.create(nlabels, 1, CV_8UC1);
-	_count.create(nlabels, 1, CV_32SC1);
-	_avgsst.create(nlabels, 1, CV_64FC1);
-	_avgdelta.create(nlabels, 1, CV_64FC1);
+	_bigcomp.create(ncc, 1, CV_8UC1);
+	_count.create(ncc, 1, CV_32SC1);
+	_avgsst.create(ncc, 1, CV_64FC1);
+	_avgdelta.create(ncc, 1, CV_64FC1);
 
-	labels = (int*)_labels.data;
+	cclabels = (int*)_cclabels.data;
 	bigcomp = (uchar*)_bigcomp.data;
 	count = (int*)_count.data;
 	avgsst = (double*)_avgsst.data;
 	avgdelta = (double*)_avgdelta.data;
 	
-	for(lab = 0; lab < nlabels; lab++)
+	for(lab = 0; lab < ncc; lab++)
 		bigcomp[lab] = stats.at<int>(lab, CC_STAT_AREA) >= 200 ? 255: 0;
 	
-	memset(count, 0, sizeof(*count)*nlabels);
-	memset(avgsst, 0, sizeof(*avgsst)*nlabels);
-	memset(avgdelta, 0, sizeof(*avgdelta)*nlabels);
+	memset(count, 0, sizeof(*count)*ncc);
+	memset(avgsst, 0, sizeof(*avgsst)*ncc);
+	memset(avgdelta, 0, sizeof(*avgdelta)*ncc);
 	
 	for(i = 0; i < size.area(); i++){
-		lab = labels[i];
+		lab = cclabels[i];
 		if(mask[i] && bigcomp[lab]
 		&& !isnan(sst[i]) && !isnan(delta[i])){
 			avgsst[lab] += sst[i];
@@ -263,7 +269,7 @@ quantized_features_td(Size size, int t, int d, short *tq, short *dq, float *sst,
 			count[lab]++;
 		}
 	}
-	for(lab = 0; lab < nlabels; lab++){
+	for(lab = 0; lab < ncc; lab++){
 		if(bigcomp[lab]){
 			avgsst[lab] /= count[lab];
 			avgdelta[lab] /= count[lab];
@@ -275,7 +281,7 @@ quantized_features_td(Size size, int t, int d, short *tq, short *dq, float *sst,
 	feat_delta = (float*)_feat.ptr(FEAT_DELTA);
 	
 	for(i = 0; i < size.area(); i++){
-		lab = labels[i];
+		lab = cclabels[i];
 		if(mask[i] && bigcomp[lab]){
 			feat_lat[i] = lat[i];
 			feat_lon[i] = lon[i];
