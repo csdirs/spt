@@ -191,9 +191,9 @@ savenpy("labels.npy", labels);
 }
 
 void
-quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat &TQ, Mat &DQ, Mat &_hist)
+quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat &TQ, Mat &DQ, Mat &_hist, Mat &_fronthist)
 {
-	int i, hrows, hcols, th, dh, *hist;
+	int i, hrows, hcols, th, dh, *hist, *fronthist;
 	float *sst, *gm, *delta;
 	short *tq, *dq;
 	
@@ -213,8 +213,12 @@ quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat 
 	hrows = cvRound((SST_HIGH - SST_LOW) * (1.0/TQ_HIST_STEP)) + 1;
 	hcols = cvRound((DELTA_HIGH - DELTA_LOW) * (1.0/DQ_HIST_STEP)) + 1;
 	_hist.create(hrows, hcols, CV_32SC1);
+	_fronthist.create(_sst.size(), CV_32SC1);
+	
 	hist = (int*)_hist.data;
+	fronthist = (int*)_fronthist.data;
 	memset(hist, 0, hrows*hcols*sizeof(*hist));
+	memset(fronthist, 0, _sst.rows*_sst.cols*sizeof(*fronthist));
 	
 	for(i = 0; i < (int)_sst.total(); i++){
 		tq[i] = dq[i] = -1;
@@ -229,6 +233,16 @@ quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat 
 			th = cvRound((sst[i] - SST_LOW) / TQ_HIST_STEP);
 			dh = cvRound((delta[i] - DELTA_LOW) / DQ_HIST_STEP);
 			hist[th*hcols + dh]++;
+		}
+	}
+	for(i = 0; i < (int)_sst.total(); i++){
+		if(gm[i] >= GRAD_LOW
+		&& !isnan(sst[i]) && !isnan(delta[i])
+		&& SST_LOW < sst[i] && sst[i] < SST_HIGH
+		&& DELTA_LOW < delta[i] && delta[i] < DELTA_HIGH){
+			th = cvRound((sst[i] - SST_LOW) / TQ_HIST_STEP);
+			dh = cvRound((delta[i] - DELTA_LOW) / DQ_HIST_STEP);
+			fronthist[i] = hist[th*hcols + dh];
 		}
 	}
 }
@@ -454,7 +468,7 @@ int
 main(int argc, char **argv)
 {
 	Mat sst, reynolds, lat, lon, m15, m16, anomaly, elem, sstdil, sstero, rfilt, sstlap, sind;
-	Mat acspo, landmask, gradmag, delta, TQ, DQ, hist, glabels, feat, lam1, lam2;
+	Mat acspo, landmask, gradmag, delta, TQ, DQ, hist, fronthist, glabels, feat, lam1, lam2;
 	int ncid, n;
 	char *path;
 	Resample *r;
@@ -505,10 +519,11 @@ savenpy("gradmag.npy", gradmag);
 savenpy("lam2.npy", lam2);
 
 	logprintf("quantize sst delta...\n");
-	quantize_sst_delta(sst, gradmag, delta, TQ, DQ, hist);
+	quantize_sst_delta(sst, gradmag, delta, TQ, DQ, hist, fronthist);
 savenpy("TQ.npy", TQ);
 savenpy("DQ.npy", DQ);
 savenpy("hist.npy", hist);
+savenpy("fronthist.npy", fronthist);
 	logprintf("quantized featured...\n");
 	quantized_features(TQ, DQ, lat, lon, sst, delta, glabels, feat);
 savenpy("glabels.npy", glabels);
