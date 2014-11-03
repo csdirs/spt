@@ -228,11 +228,11 @@ quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
 	const float *sst, const float *delta, const float *lat, const float *lon, int glab,
 	int *glabels, Mat &_feat)
 {
-	Mat _mask, _cclabels, stats, centoids, _bigcomp, _count, _avgsst, _avgdelta;
+	Mat _mask, _cclabels, stats, centoids, _ccrename, _count, _avgsst, _avgdelta;
 	double *avgsst, *avgdelta;
 	float *feat_lat, *feat_lon, *feat_sst, *feat_delta;
-	int i, ncc, lab, *cclabels, *count;
-	uchar *mask, *bigcomp;
+	int i, ncc, lab, newlab, *cclabels, *ccrename, *count;
+	uchar *mask;
 	
 	// create mask for (t, d)
 	_mask.create(size, CV_8UC1);
@@ -245,38 +245,49 @@ quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
 		return 0;
 //printf("# t=%2d, d=%2d, ncc=%d\n", t+1, d+1, ncc);
 
-	_bigcomp.create(ncc, 1, CV_8UC1);
+	_ccrename.create(ncc, 1, CV_32SC1);
+	cclabels = (int*)_cclabels.data;
+	ccrename = (int*)_ccrename.data;
+	
+	// Remove small connected components and rename labels to be contiguous.
+	// Also, set background label 0 (where mask is 0) to -1.
+	newlab = 0;
+	ccrename[0] = -1;
+	for(lab = 1; lab < ncc; lab++){
+		if(stats.at<int>(lab, CC_STAT_AREA) >= 200)
+			ccrename[lab] = newlab++;
+		else
+			ccrename[lab] = -1;
+	}
+	ncc = newlab;
+	for(i = 0; i < size.area(); i++)
+		cclabels[i] = ccrename[cclabels[i]];
+	
+	// remove these since they are wrong after the labels renaming
+	stats.release();
+	centoids.release();
+	
 	_count.create(ncc, 1, CV_32SC1);
 	_avgsst.create(ncc, 1, CV_64FC1);
 	_avgdelta.create(ncc, 1, CV_64FC1);
-
-	cclabels = (int*)_cclabels.data;
-	bigcomp = (uchar*)_bigcomp.data;
 	count = (int*)_count.data;
 	avgsst = (double*)_avgsst.data;
 	avgdelta = (double*)_avgdelta.data;
-	
-	for(lab = 0; lab < ncc; lab++)
-		bigcomp[lab] = stats.at<int>(lab, CC_STAT_AREA) >= 200 ? 255: 0;
-	
 	memset(count, 0, sizeof(*count)*ncc);
 	memset(avgsst, 0, sizeof(*avgsst)*ncc);
 	memset(avgdelta, 0, sizeof(*avgdelta)*ncc);
 	
 	for(i = 0; i < size.area(); i++){
 		lab = cclabels[i];
-		if(mask[i] && bigcomp[lab]
-		&& !isnan(sst[i]) && !isnan(delta[i])){
+		if(lab >= 0 && !isnan(sst[i]) && !isnan(delta[i])){
 			avgsst[lab] += sst[i];
 			avgdelta[lab] += delta[i];
 			count[lab]++;
 		}
 	}
 	for(lab = 0; lab < ncc; lab++){
-		if(bigcomp[lab]){
-			avgsst[lab] /= count[lab];
-			avgdelta[lab] /= count[lab];
-		}
+		avgsst[lab] /= count[lab];
+		avgdelta[lab] /= count[lab];
 	}
 	feat_lat = (float*)_feat.ptr(FEAT_LAT);
 	feat_lon = (float*)_feat.ptr(FEAT_LON);
@@ -285,7 +296,7 @@ quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
 	
 	for(i = 0; i < size.area(); i++){
 		lab = cclabels[i];
-		if(mask[i] && bigcomp[lab]){
+		if(lab >= 0){
 			feat_lat[i] = lat[i];
 			feat_lon[i] = lon[i];
 			feat_sst[i] = avgsst[lab];
