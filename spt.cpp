@@ -203,10 +203,12 @@ quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat 
 	delta = (float*)_delta.data;
 	tq = (short*)TQ.data;
 	dq = (short*)DQ.data;
+	// sstmax 315
+	// dq range -3, 3
 	for(i = 0; i < (int)_sst.total(); i++){
 		tq[i] = dq[i] = -1;
 		
-		if((gm[i] < GRAD_LOW) & (sst[i] > SST_LOW) & (delta[i] > -0.5)){
+		if((gm[i] < GRAD_LOW) && (sst[i] > SST_LOW)){ // && (delta[i] > -0.5)){
 			tq[i] = cvRound((sst[i] - SST_LOW) / TQ_STEP);
 			dq[i] = cvRound((delta[i] + 1) / DQ_STEP);
 		}
@@ -307,9 +309,14 @@ quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
 	return ncc;
 }
 
+// Cluster and find features.
+// TQ, DQ -- quantized SST and delta images
+// _lat, _lon, _sst, _delta -- latitude, longitude, SST, delta images
+// _glabels -- global labels (output)
+// _feat -- features (output)
 void
-quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta,
-	Mat &_glabels, Mat &_feat)
+quantized_features(const Mat &TQ, const Mat &DQ, const Mat &_lat, const Mat &_lon,
+	const Mat &_sst, const Mat &_delta, Mat &_glabels, Mat &_feat)
 {
 	int i, glab, tqmax, dqmax, *glabels;
 	float *lat, *lon, *sst, *delta, *feat;
@@ -362,8 +369,12 @@ quantized_features(Mat &TQ, Mat &DQ, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delt
 	transpose(_feat, _feat);
 }
 
+// Update labels by nearest label training.
+// _feat -- features (rows containing NaNs are removed)
+// _lat, _lon, _sst, _delta -- latitude, longitude, SST, delta images
+// _glabels -- global labels (output)
 static void
-nnlabel(Mat &_feat, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_glabels)
+nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat &_delta, Mat &_glabels)
 {
 	int i, k, *indices, *glabels;
 	float *vs, *vd, *lat, *lon, *sst, *delta;
@@ -380,21 +391,24 @@ nnlabel(Mat &_feat, Mat &_lat, Mat &_lon, Mat &_sst, Mat &_delta, Mat &_glabels)
 	CV_Assert(_delta.type() == CV_32FC1 && _delta.isContinuous());
 	CV_Assert(_glabels.type() == CV_32SC1 && _delta.isContinuous());
 
-	// remove NaNs from features
+	// Remove features (rows in _feat) containing NaNs.
+	// There are two cases: either all the features are NaN or
+	// none of the features are NaN.
 	_indices.create(_feat.rows, 1, CV_32SC1);
 	indices = (int*)_indices.data;
 	k = 0;
 	for(i = 0; i < _feat.rows; i++){
 		vs = (float*)_feat.ptr(i);
-		if(!isnan(vs[0]) && i != k){
+		if(!isnan(vs[FEAT_LAT]) && i != k){
 			vd = (float*)_feat.ptr(k);
 			memmove(vd, vs, NFEAT*sizeof(*vd));
 			indices[k] = i;
 			k++;
 		}
 	}
-	
 	_feat = _feat.rowRange(0, k);
+logprintf("reduced number of features: %d\n", k);
+	
 	logprintf("building nearest neighbor indices...\n");
 	flann::Index idx(_feat, flann::KMeansIndexParams(16, 1));
 	logprintf("searching nearest neighbor indices...\n");
