@@ -7,6 +7,7 @@
 #define DELTA_LOW -3
 #define DELTA_HIGH 3
 #define EDGE_THRESH 1
+#define STD_THRESH 0.5
 
 #define TQ_STEP 3
 #define DQ_STEP 0.5
@@ -172,13 +173,16 @@ savenpy("lam2.npy", lam2);
 	D = sst - avgsst;
 savenpy("D.npy", D);
 	easyclouds = (sst < 270) | (gradmag > GRAD_THRESH) | (abs(D) > EDGE_THRESH);
+	// TODO: replace easyclouds with this:
+	//std = stdfilt(sst - medianBlur(sst, 5), 7);
+	//easyclouds = (sst < 270) | (sst > STD_THRESH) | (abs(D) > EDGE_THRESH);
 savenpy("easyclouds.npy", easyclouds);
 
 	easyfronts = (sst > 270) & (gradmag > GRAD_THRESH) & (abs(D) < EDGE_THRESH)
 		& (lam2 < -0.05);
 savenpy("easyfronts.npy", easyfronts);
 
-	maskf = (easyclouds != 0) & (easyfronts == 0);
+	maskf = (easyclouds == 0) & (easyfronts != 0);
 savenpy("maskf.npy", maskf);
 
 	logprintf("connected components...\n");
