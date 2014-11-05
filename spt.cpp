@@ -259,10 +259,10 @@ quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat 
 //	_feat -- features (output)
 int
 quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
-	const float *sst, const float *delta, const float *lat, const float *lon, int glab,
-	int *glabels, Mat &_feat)
+	const float *sst, const float *delta, const float *lat, const float *lon,
+	Mat &_cclabels, Mat &_feat)
 {
-	Mat _mask, _cclabels, stats, centoids, _ccrename, _count, _avgsst, _avgdelta;
+	Mat _mask, stats, centoids, _ccrename, _count, _avgsst, _avgdelta;
 	double *avgsst, *avgdelta;
 	float *feat_lat, *feat_lon, *feat_sst, *feat_delta;
 	int i, ncc, lab, newlab, *cclabels, *ccrename, *count;
@@ -335,7 +335,6 @@ quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
 			feat_lon[i] = lon[i];
 			feat_sst[i] = avgsst[lab];
 			feat_delta[i] = avgdelta[lab];
-			glabels[i] = glab + lab;
 		}
 	}
 	return ncc;
@@ -392,10 +391,27 @@ quantized_features(const Mat &TQ, const Mat &DQ, const Mat &_lat, const Mat &_lo
 		glabels[i] = -1;
 	
 	glab = 0;
+	#pragma omp parallel for
 	for(int t = 0; t < tqmax; t++){
+		#pragma omp parallel for
 		for(int d = 0; d < dqmax; d++){
-			glab += quantized_features_td(_sst.size(), t, d, tq, dq,
-				sst, delta, lat, lon, glab, glabels, _feat);
+			Mat _cclabels;
+			int ncc, lab, *cclabels;
+			
+			ncc = quantized_features_td(_sst.size(), t, d, tq, dq,
+				sst, delta, lat, lon, _cclabels, _feat);
+			CV_Assert(_cclabels.type() == CV_32SC1 && _cclabels.isContinuous());
+			cclabels = (int*)_cclabels.data;
+			
+			#pragma omp critical
+			if(ncc > 0){
+				for(i = 0; i < (int)_cclabels.total(); i++){
+					lab = cclabels[i];
+					if(lab >= 0)
+						glabels[i] = glab + lab;
+				}
+				glab += ncc;
+			}
 		}
 	}
 	transpose(_feat, _feat);
