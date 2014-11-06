@@ -531,11 +531,43 @@ readvar_resampled(int ncid, Resample *r, const char *name)
 	return img;
 }
 
+// Separable blur implementation that can handle images containing NaN.
+// OpenCV blur does not correctly handle such images.
+void
+nanblur(const Mat &src, Mat &dst, int ksize)
+{
+	Mat kernel = Mat::ones(ksize, 1, CV_32FC1)/ksize;
+	sepFilter2D(src, dst, -1, kernel, kernel);
+}
+
+// Standard deviation filter.
+void
+stdfilter(const Mat &src, Mat &dst, int ksize)
+{
+	int i;
+	Mat b, bs, _tmp;
+	float *tmp;
+	
+	// dst = sqrt(blur(img^2) - blur(img)^2)
+	nanblur(src.mul(src), bs, ksize);
+	nanblur(src, b, ksize);
+
+	// avoid sqrt of nagative number
+	_tmp = bs - b.mul(b);
+	CV_Assert(_tmp.type() == CV_32FC1 && _tmp.isContinuous());
+	tmp = (float*)_tmp.data;
+	for(i = 0; i < (int)_tmp.total(); i++){
+		if(tmp[i] < 0)
+			tmp[i] = 0;
+	}
+	sqrt(_tmp, dst);
+}
+
 int
 main(int argc, char **argv)
 {
-	Mat sst, reynolds, lat, lon, m15, m16, elem, sstdil, sstero, rfilt, sstlap, sind;
-	Mat acspo, landmask, gradmag, delta, TQ, DQ, hist, fronthist, glabels, feat, lam1, lam2;
+	Mat sst, reynolds, lat, lon, m15, m16, elem, sstdil, sstero, rfilt, sstlap, medblur, stdf;
+	Mat acspo, gradmag, delta, TQ, DQ, hist, fronthist, glabels, feat, lam1, lam2;
 	int ncid, n;
 	char *path;
 	Resample *r;
@@ -562,6 +594,13 @@ savenpy("lat.npy", lat);
 savenpy("lon.npy", lon);
 savenpy("acspo.npy", acspo);
 savenpy("sst.npy", sst);
+
+	medianBlur(sst, medblur, 5);
+savenpy("medblur.npy", medblur);
+
+	stdfilter(sst-medblur, stdf, 7);
+savenpy("stdf.npy", stdf);
+
 
 	logprintf("delta...\n");
 	delta = m15 - m16;
@@ -613,7 +652,6 @@ savenpy("glabels_nn.npy", glabels);
 	cmapimshow("low", low, COLORMAP_JET);
 
 	namedWindow("SortIdx SST", CV_WINDOW_NORMAL|CV_WINDOW_KEEPRATIO);
-	imshow("SortIdx SST", sind);
 */
 /*
 	cmapimshow("SST", interpsst, COLORMAP_JET);
