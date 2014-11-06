@@ -15,6 +15,12 @@
 #define TQ_HIST_STEP 1
 #define DQ_HIST_STEP 0.25
 
+
+#define SCALE_LAT(x)	((x) * 10)
+#define SCALE_LON(x)	((x) * 10)
+#define SCALE_SST(x)	(x)
+#define SCALE_DELTA(x)	((x) * 6)
+
 enum {
 	FEAT_LAT,
 	FEAT_LON,
@@ -335,10 +341,10 @@ quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
 	for(i = 0; i < size.area(); i++){
 		lab = cclabels[i];
 		if(lab >= 0){
-			feat_lat[i] = lat[i];
-			feat_lon[i] = lon[i];
-			feat_sst[i] = avgsst[lab];
-			feat_delta[i] = avgdelta[lab];
+			feat_lat[i] = SCALE_LAT(lat[i]);
+			feat_lon[i] = SCALE_LON(lon[i]);
+			feat_sst[i] = SCALE_SST(avgsst[lab]);
+			feat_delta[i] = SCALE_DELTA(avgdelta[lab]);
 		}
 	}
 	return ncc;
@@ -426,7 +432,7 @@ quantized_features(const Mat &TQ, const Mat &DQ, const Mat &_lat, const Mat &_lo
 // _lat, _lon, _sst, _delta -- latitude, longitude, SST, delta images
 // _glabels -- global labels (output)
 static void
-nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat &_delta, Mat &_glabels)
+nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat &_delta, Mat &_acspo, Mat &_glabels)
 {
 	int i, k, *indices, *glabels;
 	float *vs, *vd, *lat, *lon, *sst, *delta;
@@ -434,6 +440,7 @@ nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat
 	std::vector<float> q(NFEAT), dists(1);
 	std::vector<int> ind(1);
 	flann::SearchParams sparam(4);
+	uchar *acspo;
 	
 	CV_Assert(_feat.type() == CV_32FC1 && _feat.isContinuous()
 		&& _feat.cols == NFEAT);
@@ -441,6 +448,7 @@ nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat
 	CV_Assert(_lon.type() == CV_32FC1 && _lon.isContinuous());
 	CV_Assert(_sst.type() == CV_32FC1 && _sst.isContinuous());
 	CV_Assert(_delta.type() == CV_32FC1 && _delta.isContinuous());
+	CV_Assert(_acspo.type() == CV_8UC1 && _acspo.isContinuous());
 	CV_Assert(_glabels.type() == CV_32SC1 && _delta.isContinuous());
 
 	// Remove features (rows in _feat) containing NaNs.
@@ -469,25 +477,64 @@ logprintf("reduced number of features: %d\n", k);
 	lon = (float*)_lon.data;
 	sst = (float*)_sst.data;
 	delta = (float*)_delta.data;
+	acspo = (uchar*)_acspo.data;
 	glabels = (int*)_glabels.data;
 
 	for(i = 0; i < (int)_sst.total(); i++){
-		if(glabels[i] < 0 && !isnan(sst[i]) && !isnan(delta[i])){
-			q[FEAT_LAT] = lat[i];
-			q[FEAT_LON] = lon[i];
-			q[FEAT_SST] = sst[i];
-			q[FEAT_DELTA] = delta[i];
+		if(glabels[i] < 0 			//&& (acspo[i]&MaskCloud) != MaskCloudClear
+		&& !isnan(sst[i]) && !isnan(delta[i])){
+			q[FEAT_LAT] = SCALE_LAT(lat[i]);
+			q[FEAT_LON] = SCALE_LON(lon[i]);
+			q[FEAT_SST] = SCALE_SST(sst[i]);
+			q[FEAT_DELTA] = SCALE_DELTA(delta[i]);
 			idx.knnSearch(q, ind, dists, 1, sparam);
-			if(dists[0] < 10)
+			if(dists[0] < 30)
 				glabels[i] = glabels[indices[ind[0]]];
 		}
 	}
 }
 
 int
+open_resampled(const char *path, Resample *r)
+{
+	int ncid, n;
+	Mat lat, acspo;
+	
+	n = nc_open(path, NC_NOWRITE, &ncid);
+	if(n != NC_NOERR)
+		ncfatal(n, "nc_open failed for %s", path);
+	acspo = readvar(ncid, "acspo_mask");
+	lat = readvar(ncid, "latitude");
+	
+	resample_init(r, lat, acspo);
+	return ncid;
+}
+
+Mat
+readvar_resampled(int ncid, Resample *r, const char *name)
+{
+	Mat img;
+	
+	if(strcmp(name, "latitude") == 0)
+		return r->slat;
+	if(strcmp(name, "acspo_mask") == 0)
+		return r->sacspo;
+
+	img = readvar(ncid, name);
+	if(strcmp(name, "longitude") == 0){
+		resample_sort(r->sind, img);
+		return img;
+	}
+	
+	logprintf("resampling %s...\n", name);
+	resample_float32(r, img, img);
+	return img;
+}
+
+int
 main(int argc, char **argv)
 {
-	Mat sst, reynolds, lat, lon, m15, m16, anomaly, elem, sstdil, sstero, rfilt, sstlap, sind;
+	Mat sst, reynolds, lat, lon, m15, m16, elem, sstdil, sstero, rfilt, sstlap, sind;
 	Mat acspo, landmask, gradmag, delta, TQ, DQ, hist, fronthist, glabels, feat, lam1, lam2;
 	int ncid, n;
 	char *path;
@@ -497,36 +544,26 @@ main(int argc, char **argv)
 		eprintf("usage: %s granule\n", argv[0]);
 	path = argv[1];
 	
-	n = nc_open(path, NC_NOWRITE, &ncid);
-	if(n != NC_NOERR)
-		ncfatal(n, "nc_open failed for %s", path);
-	sst = readvar(ncid, "sst_regression");
-	reynolds = readvar(ncid, "sst_reynolds");
-	lat = readvar(ncid, "latitude");
-	lon = readvar(ncid, "longitude");
-	acspo = readvar(ncid, "acspo_mask");
-	m15 = readvar(ncid, "brightness_temp_chM15");
-	m16 = readvar(ncid, "brightness_temp_chM16");
+	
+	logprintf("reading and resampling...\n");
+	r = new Resample;
+	ncid = open_resampled(path, r);
+	sst = readvar_resampled(ncid, r, "sst_regression");
+	lat = readvar_resampled(ncid, r, "latitude");
+	lon = readvar_resampled(ncid, r, "longitude");
+	acspo = readvar_resampled(ncid, r, "acspo_mask");
+	m15 = readvar_resampled(ncid, r, "brightness_temp_chM15");
+	m16 = readvar_resampled(ncid, r, "brightness_temp_chM16");
 	n = nc_close(ncid);
 	if(n != NC_NOERR)
 		ncfatal(n, "nc_close failed for %s", path);
 
-	logprintf("resampling...\n");
-savenpy("lat_before.npy", lat);
-savenpy("acspo_before.npy", acspo);
-	r = new Resample;
-	resample_init(r, lat, acspo);
-	resample_float32(r, sst, sst);
-savenpy("lat_after.npy", lat);
-savenpy("acspo_after.npy", acspo);
-	resample_float32(r, m15, m15);
-	resample_float32(r, m16, m16);
-	delete r;
-
-	logprintf("anomaly and delta...\n");
-	anomaly = sst - reynolds;
+savenpy("lat.npy", lat);
+savenpy("lon.npy", lon);
+savenpy("acspo.npy", acspo);
 savenpy("sst.npy", sst);
-savenpy("anomaly.npy", anomaly);
+
+	logprintf("delta...\n");
 	delta = m15 - m16;
 savenpy("delta.npy", delta);
 	
@@ -549,7 +586,7 @@ savenpy("fronthist.npy", fronthist);
 savenpy("glabels.npy", glabels);
 savenpy("feat.npy", feat);
 
-	nnlabel(feat, lat, lon, sst, delta, glabels);
+	nnlabel(feat, lat, lon, sst, delta, acspo, glabels);
 savenpy("glabels_nn.npy", glabels);
 
 //easyfronts = (sst > 270) & (gradmag > 0.3) & (lam2 < -0.01)
@@ -587,5 +624,6 @@ savenpy("glabels_nn.npy", glabels);
 */
 
 	logprintf("done\n");
+	delete r;
 	return 0;
 }

@@ -321,8 +321,6 @@ benchmark_avgfilter3(Mat &img, Mat &sind, int N)
 void
 resample_init(Resample *r, const Mat &lat, const Mat &acspo)
 {
-	Mat sacspo;
-	
 	CV_Assert(lat.type() == CV_32FC1);
 	CV_Assert(acspo.type() == CV_8UC1);
 
@@ -331,8 +329,8 @@ resample_init(Resample *r, const Mat &lat, const Mat &acspo)
 	argsortlat(lat, VIIRS_SWATH_SIZE, r->sind);
 
 	r->slat = resample_sort(r->sind, lat);
-	sacspo = resample_sort(r->sind, acspo);
-	r->slandmask = (sacspo & MaskLand) != 0;
+	r->sacspo = resample_sort(r->sind, acspo);
+	r->slandmask = (r->sacspo & MaskLand) != 0;
 }
 
 // Resample VIIRS swatch image img with corresponding
