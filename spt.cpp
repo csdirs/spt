@@ -52,12 +52,13 @@ laplacian(Mat &src, Mat &dst)
 	filter2D(src, dst, -1, kern);
 }
 
+// Separable blur implementation that can handle images containing NaN.
+// OpenCV blur does not correctly handle such images.
 void
-avgfilter(Mat &src, Mat &dst, int ksize)
+nanblur(const Mat &src, Mat &dst, int ksize)
 {
-	Mat kern = Mat::ones(ksize, ksize, CV_64FC1);
-	kern *= 1.0/(ksize*ksize);
-	filter2D(src, dst, -1, kern);
+	Mat kernel = Mat::ones(ksize, 1, CV_64FC1)/ksize;
+	sepFilter2D(src, dst, -1, kernel, kernel);
 }
 
 void
@@ -70,6 +71,7 @@ gradientmag(Mat &img, Mat &gm)
 	Mat tmp, dX, dY, ht, hpt;
 
 	// TODO: padding needed here?
+	// TODO: use sepFilter2D instead of filter2D
 	transpose(h, ht);
 	transpose(hp, hpt);
 	filter2D(img, tmp, -1, hp);
@@ -162,14 +164,15 @@ savefilename(char *path)
 	return estrdup(buf);
 }
 
+/*
 void
 findfronts(Mat &sst, Mat &gradmag)
 {
 	Mat avgsst, lam2, lam1, D, easyclouds, easyfronts, maskf, labels, stats, centoids;
 	int i, nlabels;
 	
-	logprintf("avgfilter...\n");
-	avgfilter(sst, avgsst, 7);
+	logprintf("nanblur...\n");
+	nanblur(sst, avgsst, 7);
 savenpy("avgsst.npy", avgsst);
 
 	logprintf("localmax...\n");
@@ -181,11 +184,11 @@ savenpy("D.npy", D);
 	easyclouds = (sst < 270) | (gradmag > GRAD_THRESH) | (abs(D) > EDGE_THRESH);
 	// TODO: replace easyclouds with this:
 	//std = stdfilt(sst - medianBlur(sst, 5), 7);
-	//easyclouds = (sst < 270) | (sst > STD_THRESH) | (abs(D) > EDGE_THRESH);
+	//easyclouds = (sst < 270) | (std > STD_THRESH) | (abs(D) > EDGE_THRESH);
 savenpy("easyclouds.npy", easyclouds);
 
-	easyfronts = (sst > 270) & (gradmag > GRAD_THRESH) & (abs(D) < EDGE_THRESH)
-		& (lam2 < -0.05);
+	easyfronts = (sst > 270) & (gradmag > GRAD_THRESH) & (std < STD_THRESH)
+		& (lam2 < -0.01);
 savenpy("easyfronts.npy", easyfronts);
 
 	maskf = (easyclouds == 0) & (easyfronts != 0);
@@ -199,6 +202,7 @@ savenpy("labels.npy", labels);
 		logprintf("connected component %d area: %d\n", i, stats.at<int>(i, CC_STAT_AREA));
 	}
 }
+*/
 
 void
 quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat &TQ, Mat &DQ, Mat &_hist, Mat &_fronthist)
@@ -432,7 +436,7 @@ quantized_features(const Mat &TQ, const Mat &DQ, const Mat &_lat, const Mat &_lo
 // _lat, _lon, _sst, _delta -- latitude, longitude, SST, delta images
 // _glabels -- global labels (output)
 static void
-nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat &_delta, Mat &_acspo, Mat &_glabels)
+nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat &_delta, Mat &_acspo, Mat _easyclouds, Mat &_glabels)
 {
 	int i, k, *indices, *glabels;
 	float *vs, *vd, *lat, *lon, *sst, *delta;
@@ -440,7 +444,7 @@ nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat
 	std::vector<float> q(NFEAT), dists(1);
 	std::vector<int> ind(1);
 	flann::SearchParams sparam(4);
-	uchar *acspo;
+	uchar *acspo, *easyclouds;
 	
 	CV_Assert(_feat.type() == CV_32FC1 && _feat.isContinuous()
 		&& _feat.cols == NFEAT);
@@ -450,6 +454,7 @@ nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat
 	CV_Assert(_delta.type() == CV_32FC1 && _delta.isContinuous());
 	CV_Assert(_acspo.type() == CV_8UC1 && _acspo.isContinuous());
 	CV_Assert(_glabels.type() == CV_32SC1 && _delta.isContinuous());
+	CV_Assert(_easyclouds.type() == CV_8UC1 && _easyclouds.isContinuous());
 
 	// Remove features (rows in _feat) containing NaNs.
 	// There are two cases: either all the features are NaN or
@@ -479,9 +484,10 @@ logprintf("reduced number of features: %d\n", k);
 	delta = (float*)_delta.data;
 	acspo = (uchar*)_acspo.data;
 	glabels = (int*)_glabels.data;
+	easyclouds = (uchar*)_easyclouds.data;
 
 	for(i = 0; i < (int)_sst.total(); i++){
-		if(glabels[i] < 0 			//&& (acspo[i]&MaskCloud) != MaskCloudClear
+		if(glabels[i] < 0 && easyclouds[i] == 0 && (acspo[i]&MaskCloud) != MaskCloudClear
 		&& !isnan(sst[i]) && !isnan(delta[i])){
 			q[FEAT_LAT] = SCALE_LAT(lat[i]);
 			q[FEAT_LON] = SCALE_LON(lon[i]);
@@ -531,16 +537,8 @@ readvar_resampled(int ncid, Resample *r, const char *name)
 	return img;
 }
 
-// Separable blur implementation that can handle images containing NaN.
-// OpenCV blur does not correctly handle such images.
-void
-nanblur(const Mat &src, Mat &dst, int ksize)
-{
-	Mat kernel = Mat::ones(ksize, 1, CV_32FC1)/ksize;
-	sepFilter2D(src, dst, -1, kernel, kernel);
-}
-
-// Standard deviation filter.
+// Standard deviation filter, implemented as
+//	dst = sqrt(blur(src^2) - blur(src)^2)
 void
 stdfilter(const Mat &src, Mat &dst, int ksize)
 {
@@ -548,7 +546,6 @@ stdfilter(const Mat &src, Mat &dst, int ksize)
 	Mat b, bs, _tmp;
 	float *tmp;
 	
-	// dst = sqrt(blur(img^2) - blur(img)^2)
 	nanblur(src.mul(src), bs, ksize);
 	nanblur(src, b, ksize);
 
@@ -566,8 +563,8 @@ stdfilter(const Mat &src, Mat &dst, int ksize)
 int
 main(int argc, char **argv)
 {
-	Mat sst, reynolds, lat, lon, m15, m16, elem, sstdil, sstero, rfilt, sstlap, medblur, stdf;
-	Mat acspo, gradmag, delta, TQ, DQ, hist, fronthist, glabels, feat, lam1, lam2;
+	Mat sst, reynolds, lat, lon, m15, m16, elem, sstdil, sstero, rfilt, sstlap, medf, stdf, blurf;
+	Mat acspo, gradmag, delta, TQ, DQ, hist, fronthist, glabels, feat, lam1, lam2, easyclouds, easyfronts;
 	int ncid, n;
 	char *path;
 	Resample *r;
@@ -575,7 +572,6 @@ main(int argc, char **argv)
 	if(argc != 2)
 		eprintf("usage: %s granule\n", argv[0]);
 	path = argv[1];
-	
 	
 	logprintf("reading and resampling...\n");
 	r = new Resample;
@@ -595,16 +591,17 @@ savenpy("lon.npy", lon);
 savenpy("acspo.npy", acspo);
 savenpy("sst.npy", sst);
 
-	medianBlur(sst, medblur, 5);
-savenpy("medblur.npy", medblur);
+	medianBlur(sst, medf, 5);
+savenpy("medf.npy", medf);
 
-	stdfilter(sst-medblur, stdf, 7);
+	stdfilter(sst-medf, stdf, 7);
 savenpy("stdf.npy", stdf);
 
-
-	logprintf("delta...\n");
-	delta = m15 - m16;
-savenpy("delta.npy", delta);
+	nanblur(sst, blurf, 7);
+savenpy("blurf.npy", blurf);
+	easyclouds = (sst < SST_LOW) | (stdf > STD_THRESH)
+		| (abs(sst - blurf) > EDGE_THRESH);
+savenpy("easyclouds.npy", easyclouds);
 	
 	logprintf("gradmag...\n");
 	gradientmag(sst, gradmag);
@@ -614,6 +611,14 @@ savenpy("gradmag.npy", gradmag);
 	localmax(gradmag, lam2, lam1, 1);
 savenpy("lam2.npy", lam2);
 
+	easyfronts = (sst > SST_LOW) & (gradmag > 0.5)
+		& (stdf < STD_THRESH) & (lam2 < -0.05);
+savenpy("easyfronts.npy", easyfronts);
+
+	logprintf("delta...\n");
+	delta = m15 - m16;
+savenpy("delta.npy", delta);
+	
 	logprintf("quantize sst delta...\n");
 	quantize_sst_delta(sst, gradmag, delta, TQ, DQ, hist, fronthist);
 savenpy("TQ.npy", TQ);
@@ -625,10 +630,9 @@ savenpy("fronthist.npy", fronthist);
 savenpy("glabels.npy", glabels);
 savenpy("feat.npy", feat);
 
-	nnlabel(feat, lat, lon, sst, delta, acspo, glabels);
+	nnlabel(feat, lat, lon, sst, delta, acspo, easyclouds, glabels);
 savenpy("glabels_nn.npy", glabels);
 
-//easyfronts = (sst > 270) & (gradmag > 0.3) & (lam2 < -0.01)
 
 /*
 	logprintf("dilate...");
