@@ -19,6 +19,7 @@
 
 #define TQ_HIST_STEP 1
 #define DQ_HIST_STEP 0.25
+#define OQ_HIST_STEP OQ_STEP
 
 
 #define SCALE_LAT(x)	((x) * 10)
@@ -221,9 +222,9 @@ savenpy("labels.npy", labels);
 // _fronthist -- image of histogram value at front pixels (output)
 void
 quantize_sst_delta(const Mat &_sst, const Mat &_delta, Mat &_omega, const Mat &_gradmag, Mat &_albedo,
-	Mat &TQ, Mat &DQ, Mat &OQ, Mat &_hist, Mat &_fronthist)
+	Mat &TQ, Mat &DQ, Mat &OQ)
 {
-	int i, hrows, hcols, th, dh, *hist, *fronthist;
+	int i, ntq, ndq, noq;
 	float *sst, *delta, *omega, *gm, *albedo;
 	short *tq, *dq, *oq;
 	
@@ -247,16 +248,9 @@ quantize_sst_delta(const Mat &_sst, const Mat &_delta, Mat &_omega, const Mat &_
 	oq = (short*)OQ.data;
 	
 	// allocate space for histogram and histogram image for fronts
-	hrows = cvRound((SST_HIGH - SST_LOW) * (1.0/TQ_HIST_STEP)) + 1;
-	hcols = cvRound((DELTA_HIGH - DELTA_LOW) * (1.0/DQ_HIST_STEP)) + 1;
-	_hist.create(hrows, hcols, CV_32SC1);
-	_fronthist.create(_sst.size(), CV_32SC1);
-	
-	// zero out the histogram and histogram image for fronts
-	hist = (int*)_hist.data;
-	fronthist = (int*)_fronthist.data;
-	memset(hist, 0, hrows*hcols*sizeof(*hist));
-	memset(fronthist, 0, _sst.rows*_sst.cols*sizeof(*fronthist));
+	ntq = cvRound((SST_HIGH - SST_LOW) * (1.0/TQ_HIST_STEP)) + 1;
+	ndq = cvRound((DELTA_HIGH - DELTA_LOW) * (1.0/DQ_HIST_STEP)) + 1;
+	noq = cvRound((OMEGA_HIGH - OMEGA_LOW) * (1.0/OQ_HIST_STEP)) + 1;
 	
 	// quantize SST and delta, and also computer the histogram
 	// of counts per quantization bin
@@ -271,21 +265,6 @@ quantize_sst_delta(const Mat &_sst, const Mat &_delta, Mat &_omega, const Mat &_
 			dq[i] = cvRound((delta[i] - DELTA_LOW) / DQ_STEP);
 			oq[i] = cvRound((omega[i] - OMEGA_LOW) / OQ_STEP);
 		
-			th = cvRound((sst[i] - SST_LOW) / TQ_HIST_STEP);
-			dh = cvRound((delta[i] - DELTA_LOW) / DQ_HIST_STEP);
-			hist[th*hcols + dh]++;
-		}
-	}
-	
-	// create an image of fronts showing the histogram value for each pixel
-	for(i = 0; i < (int)_sst.total(); i++){
-		if(gm[i] >= GRAD_LOW
-		&& !isnan(sst[i]) && !isnan(delta[i])
-		&& SST_LOW < sst[i] && sst[i] < SST_HIGH
-		&& DELTA_LOW < delta[i] && delta[i] < DELTA_HIGH){
-			th = cvRound((sst[i] - SST_LOW) / TQ_HIST_STEP);
-			dh = cvRound((delta[i] - DELTA_LOW) / DQ_HIST_STEP);
-			fronthist[i] = hist[th*hcols + dh];
 		}
 	}
 }
@@ -639,7 +618,7 @@ int
 main(int argc, char **argv)
 {
 	Mat sst, reynolds, lat, lon, m14, m15, m16, elem, sstdil, sstero, rfilt, sstlap, medf, stdf, blurf;
-	Mat acspo, gradmag, delta, omega, albedo, TQ, DQ, OQ, hist, fronthist, glabels, feat, lam1, lam2, easyclouds, easyfronts;
+	Mat acspo, gradmag, delta, omega, albedo, TQ, DQ, OQ, glabels, feat, lam1, lam2, easyclouds, easyfronts;
 	int ncid, n;
 	char *path;
 	Resample *r;
@@ -699,11 +678,9 @@ savenpy("delta.npy", delta);
 savenpy("omega.npy", delta);
 
 	logprintf("quantize sst delta...\n");
-	quantize_sst_delta(sst, delta, omega, gradmag, albedo, TQ, DQ, OQ, hist, fronthist);
+	quantize_sst_delta(sst, delta, omega, gradmag, albedo, TQ, DQ, OQ);
 savenpy("TQ.npy", TQ);
 savenpy("DQ.npy", DQ);
-savenpy("hist.npy", hist);
-savenpy("fronthist.npy", fronthist);
 
 	exit(1);
 	logprintf("quantized featured...\n");
