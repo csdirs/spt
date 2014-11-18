@@ -29,6 +29,10 @@ enum {
 	NFEAT,
 };
 
+enum {
+	DEBUG = 1,
+};
+
 void
 clipsst(Mat &sst)
 {
@@ -431,6 +435,49 @@ quantized_features(const Mat &TQ, const Mat &DQ, const Mat &_lat, const Mat &_lo
 	transpose(_feat, _feat);
 }
 
+// Remove features from _feat that are not on the border of clusters defined
+// by the clustering labels in _glabels.
+void
+remove_inner_feats(Mat &_feat, Mat &_glabels)
+{
+	int i, k;
+	Mat elem, _labero;
+	uchar *labero;
+	float *feat, *vs;
+	
+	CV_Assert(_feat.type() == CV_32FC1 && _feat.isContinuous()
+		&& _feat.cols == NFEAT);
+	CV_Assert(_glabels.type() == CV_32SC1 && _glabels.isContinuous());
+	
+	if(DEBUG){
+		k = 0;
+		for(i = 0; i < _feat.rows; i++){
+			vs = (float*)_feat.ptr(i);
+			if(!isnan(vs[FEAT_LAT])){
+				k++;
+			}
+		}
+		logprintf("number of feature before inner feats are removed: %d\n", k);
+	}
+	
+	// erode clusters to remove borders from clusters
+	elem = getStructuringElement(MORPH_RECT, Size(3, 3));
+	erode(_glabels >= 0, _labero, elem);
+	
+	CV_Assert(_labero.type() == CV_8UC1 && _glabels.isContinuous());
+	
+	// remove features if the pixel is in the eroded mask
+	labero = _labero.data;
+	feat = (float*)_feat.data;
+	for(i = 0; i < (int)_glabels.total(); i++){
+		if(labero[i]){
+			for(k = 0; k < NFEAT; k++)
+				feat[k] = NAN;
+		}
+		feat += NFEAT;
+	}
+}
+
 // Update labels by nearest label training.
 // _feat -- features (rows containing NaNs are removed)
 // _lat, _lon, _sst, _delta -- latitude, longitude, SST, delta images
@@ -456,6 +503,8 @@ nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat
 	CV_Assert(_glabels.type() == CV_32SC1 && _delta.isContinuous());
 	CV_Assert(_easyclouds.type() == CV_8UC1 && _easyclouds.isContinuous());
 
+	remove_inner_feats(_feat, _glabels);
+	
 	// Remove features (rows in _feat) containing NaNs.
 	// There are two cases: either all the features are NaN or
 	// none of the features are NaN.
@@ -498,6 +547,7 @@ logprintf("reduced number of features: %d\n", k);
 				glabels[i] = glabels[indices[ind[0]]];
 		}
 	}
+logprintf("done searching nearest neighbors\n");
 }
 
 int
