@@ -6,11 +6,16 @@
 #define SST_HIGH 315
 #define DELTA_LOW -3
 #define DELTA_HIGH 3
+#define OMEGA_LOW -1
+#define OMEGA_HIGH 15
+#define ALBEDO_LOW 3
+#define ALBEDO_HIGH 4
 #define EDGE_THRESH 1
 #define STD_THRESH 0.5
 
 #define TQ_STEP 3
 #define DQ_STEP 0.5
+#define OQ_STEP 1
 
 #define TQ_HIST_STEP 1
 #define DQ_HIST_STEP 0.25
@@ -209,30 +214,37 @@ savenpy("labels.npy", labels);
 */
 
 // Quantize SST and delta values.
-// _sst, _delta -- SST and delta images
-// _gradmag -- gradient magnitude image
-// TQ, DQ -- quantized SST and delta respectively (output)
+// _sst, _delta, _omega -- SST, delta, and omega images
+// _gradmag, _albedo -- gradient magnitude and albedo image
+// TQ, DQ, OQ -- quantized SST, delta, omega respectively (output)
 // _hist -- histogram of counts for TQ and DQ values (output)
 // _fronthist -- image of histogram value at front pixels (output)
 void
-quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat &TQ, Mat &DQ, Mat &_hist, Mat &_fronthist)
+quantize_sst_delta(const Mat &_sst, const Mat &_delta, Mat &_omega, const Mat &_gradmag, Mat &_albedo,
+	Mat &TQ, Mat &DQ, Mat &OQ, Mat &_hist, Mat &_fronthist)
 {
 	int i, hrows, hcols, th, dh, *hist, *fronthist;
-	float *sst, *gm, *delta;
-	short *tq, *dq;
+	float *sst, *delta, *omega, *gm, *albedo;
+	short *tq, *dq, *oq;
 	
 	CV_Assert(_sst.type() == CV_32FC1);
-	CV_Assert(_gradmag.type() == CV_32FC1);
 	CV_Assert(_delta.type() == CV_32FC1);
+	CV_Assert(_omega.type() == CV_32FC1);
+	CV_Assert(_gradmag.type() == CV_32FC1);
+	CV_Assert(_albedo.type() == CV_32FC1);
 	
 	TQ.create(_sst.size(), CV_16SC1);
 	DQ.create(_sst.size(), CV_16SC1);
+	OQ.create(_sst.size(), CV_16SC1);
 	
 	sst = (float*)_sst.data;
-	gm = (float*)_gradmag.data;
 	delta = (float*)_delta.data;
+	omega = (float*)_omega.data;
+	gm = (float*)_gradmag.data;
+	albedo = (float*)_albedo.data;
 	tq = (short*)TQ.data;
 	dq = (short*)DQ.data;
+	oq = (short*)OQ.data;
 	
 	// allocate space for histogram and histogram image for fronts
 	hrows = cvRound((SST_HIGH - SST_LOW) * (1.0/TQ_HIST_STEP)) + 1;
@@ -249,7 +261,7 @@ quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat 
 	// quantize SST and delta, and also computer the histogram
 	// of counts per quantization bin
 	for(i = 0; i < (int)_sst.total(); i++){
-		tq[i] = dq[i] = -1;
+		tq[i] = dq[i] = oq[i] = -1;
 		
 		if(gm[i] < GRAD_LOW		// && delta[i] > -0.5
 		&& !isnan(sst[i]) && !isnan(delta[i])
@@ -257,6 +269,7 @@ quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat 
 		&& DELTA_LOW < delta[i] && delta[i] < DELTA_HIGH){
 			tq[i] = cvRound((sst[i] - SST_LOW) / TQ_STEP);
 			dq[i] = cvRound((delta[i] - DELTA_LOW) / DQ_STEP);
+			oq[i] = cvRound((omega[i] - OMEGA_LOW) / OQ_STEP);
 		
 			th = cvRound((sst[i] - SST_LOW) / TQ_HIST_STEP);
 			dh = cvRound((delta[i] - DELTA_LOW) / DQ_HIST_STEP);
@@ -625,8 +638,8 @@ stdfilter(const Mat &src, Mat &dst, int ksize)
 int
 main(int argc, char **argv)
 {
-	Mat sst, reynolds, lat, lon, m15, m16, elem, sstdil, sstero, rfilt, sstlap, medf, stdf, blurf;
-	Mat acspo, gradmag, delta, TQ, DQ, hist, fronthist, glabels, feat, lam1, lam2, easyclouds, easyfronts;
+	Mat sst, reynolds, lat, lon, m14, m15, m16, elem, sstdil, sstero, rfilt, sstlap, medf, stdf, blurf;
+	Mat acspo, gradmag, delta, omega, albedo, TQ, DQ, OQ, hist, fronthist, glabels, feat, lam1, lam2, easyclouds, easyfronts;
 	int ncid, n;
 	char *path;
 	Resample *r;
@@ -642,8 +655,10 @@ main(int argc, char **argv)
 	lat = readvar_resampled(ncid, r, "latitude");
 	lon = readvar_resampled(ncid, r, "longitude");
 	acspo = readvar_resampled(ncid, r, "acspo_mask");
+	m14 = readvar_resampled(ncid, r, "brightness_temp_chM14");
 	m15 = readvar_resampled(ncid, r, "brightness_temp_chM15");
 	m16 = readvar_resampled(ncid, r, "brightness_temp_chM16");
+	albedo = readvar_resampled(ncid, r, "albedo_chM7");
 	n = nc_close(ncid);
 	if(n != NC_NOERR)
 		ncfatal(n, "nc_close failed for %s", path);
@@ -679,14 +694,18 @@ savenpy("easyfronts.npy", easyfronts);
 
 	logprintf("delta...\n");
 	delta = m15 - m16;
+	omega = m14 - m15;
 savenpy("delta.npy", delta);
-	
+savenpy("omega.npy", delta);
+
 	logprintf("quantize sst delta...\n");
-	quantize_sst_delta(sst, gradmag, delta, TQ, DQ, hist, fronthist);
+	quantize_sst_delta(sst, delta, omega, gradmag, albedo, TQ, DQ, OQ, hist, fronthist);
 savenpy("TQ.npy", TQ);
 savenpy("DQ.npy", DQ);
 savenpy("hist.npy", hist);
 savenpy("fronthist.npy", fronthist);
+
+	exit(1);
 	logprintf("quantized featured...\n");
 	quantized_features(TQ, DQ, lat, lon, sst, delta, glabels, feat);
 savenpy("glabels.npy", glabels);
