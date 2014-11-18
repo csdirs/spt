@@ -208,6 +208,12 @@ savenpy("labels.npy", labels);
 }
 */
 
+// Quantize SST and delta values.
+// _sst, _delta -- SST and delta images
+// _gradmag -- gradient magnitude image
+// TQ, DQ -- quantized SST and delta respectively (output)
+// _hist -- histogram of counts for TQ and DQ values (output)
+// _fronthist -- image of histogram value at front pixels (output)
 void
 quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat &TQ, Mat &DQ, Mat &_hist, Mat &_fronthist)
 {
@@ -228,16 +234,20 @@ quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat 
 	tq = (short*)TQ.data;
 	dq = (short*)DQ.data;
 	
+	// allocate space for histogram and histogram image for fronts
 	hrows = cvRound((SST_HIGH - SST_LOW) * (1.0/TQ_HIST_STEP)) + 1;
 	hcols = cvRound((DELTA_HIGH - DELTA_LOW) * (1.0/DQ_HIST_STEP)) + 1;
 	_hist.create(hrows, hcols, CV_32SC1);
 	_fronthist.create(_sst.size(), CV_32SC1);
 	
+	// zero out the histogram and histogram image for fronts
 	hist = (int*)_hist.data;
 	fronthist = (int*)_fronthist.data;
 	memset(hist, 0, hrows*hcols*sizeof(*hist));
 	memset(fronthist, 0, _sst.rows*_sst.cols*sizeof(*fronthist));
 	
+	// quantize SST and delta, and also computer the histogram
+	// of counts per quantization bin
 	for(i = 0; i < (int)_sst.total(); i++){
 		tq[i] = dq[i] = -1;
 		
@@ -253,6 +263,8 @@ quantize_sst_delta(const Mat &_sst, const Mat &_gradmag, const Mat &_delta, Mat 
 			hist[th*hcols + dh]++;
 		}
 	}
+	
+	// create an image of fronts showing the histogram value for each pixel
 	for(i = 0; i < (int)_sst.total(); i++){
 		if(gm[i] >= GRAD_LOW
 		&& !isnan(sst[i]) && !isnan(delta[i])

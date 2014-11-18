@@ -17,5 +17,10 @@ cat > loaddata.py <<EOF
 import numpy as np
 
 EOF
+
 #./spt /cephfs/fhs/data/in/acspo/www.star.nesdis.noaa.gov/pub/sod/sst/micros_data/acspo_nc/npp/2014-07-11/ACSPO_V2.30_NPP_VIIRS_2014-07-11_0000-0010_20140714.005638.nc
-OMP_NUM_THREADS=24 ./spt /home/fhs/data/in/acspo/www.star.nesdis.noaa.gov/pub/sod/osb/ykihai/VIIRS_Samples_for_Irina/Select/ACSPO_V2.30_NPP_VIIRS_2014-06-20_1710-1719_20140623.071032.nc | tee -a loaddata.py
+
+#DATA_PATH=/home/fhs/data/in/acspo/www.star.nesdis.noaa.gov/pub/sod/osb/ykihai/VIIRS_Samples_for_Irina/Select/ACSPO_V2.30_NPP_VIIRS_2014-06-20_1710-1719_20140623.071032.nc
+DATA_PATH=/home/fhs/data/in/acspo/www.star.nesdis.noaa.gov/pub/sod/osb/petrenko/VIIRS/VIIRS/day/ACSPO_V2.31b02_NPP_VIIRS_2014-11-04_1410-1419_20141111.212954.nc
+
+OMP_NUM_THREADS=24 ./spt $DATA_PATH | tee -a loaddata.py
