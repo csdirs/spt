@@ -218,15 +218,15 @@ savenpy("labels.npy", labels);
 // _sst, _delta, _omega -- SST, delta, and omega images
 // _gradmag, _albedo -- gradient magnitude and albedo image
 // TQ, DQ, OQ -- quantized SST, delta, omega respectively (output)
-// _hist -- histogram of counts for TQ and DQ values (output)
-// _fronthist -- image of histogram value at front pixels (output)
+// lut -- look up table for cloud/ocean in quantization space (output)
 void
-quantize_sst_delta(const Mat &_sst, const Mat &_delta, Mat &_omega, const Mat &_gradmag, Mat &_albedo,
-	Mat &TQ, Mat &DQ, Mat &OQ)
+quantize(const Mat &_sst, const Mat &_delta, Mat &_omega, const Mat &_gradmag, Mat &_albedo,
+	Mat &TQ, Mat &DQ, Mat &OQ, Mat &lut)
 {
-	int i, ntq, ndq, noq;
+	int i, j, k, diff;
 	float *sst, *delta, *omega, *gm, *albedo;
 	short *tq, *dq, *oq;
+	Mat ocean, cloud;
 	
 	CV_Assert(_sst.type() == CV_32FC1);
 	CV_Assert(_delta.type() == CV_32FC1);
@@ -247,10 +247,20 @@ quantize_sst_delta(const Mat &_sst, const Mat &_delta, Mat &_omega, const Mat &_
 	dq = (short*)DQ.data;
 	oq = (short*)OQ.data;
 	
-	// allocate space for histogram and histogram image for fronts
-	ntq = cvRound((SST_HIGH - SST_LOW) * (1.0/TQ_HIST_STEP)) + 1;
-	ndq = cvRound((DELTA_HIGH - DELTA_LOW) * (1.0/DQ_HIST_STEP)) + 1;
-	noq = cvRound((OMEGA_HIGH - OMEGA_LOW) * (1.0/OQ_HIST_STEP)) + 1;
+	// allocate space for LUT and initilize all entries to -1
+	const int lutsizes[] = {
+		cvRound((SST_HIGH - SST_LOW) * (1.0/TQ_STEP)) + 1,
+		cvRound((DELTA_HIGH - DELTA_LOW) * (1.0/DQ_STEP)) + 1,
+		cvRound((OMEGA_HIGH - OMEGA_LOW) * (1.0/OQ_STEP)) + 1,
+	};
+	cloud.create(3, lutsizes, CV_32SC1);
+	cloud = Scalar(0);
+	ocean.create(3, lutsizes, CV_32SC1);
+	ocean = Scalar(0);
+	lut.create(3, lutsizes, CV_8SC1);
+	lut = Scalar(-1);
+	
+	logprintf("LUT size is %dx%dx%d\n", lut.size[0], lut.size[1], lut.size[2]);
 	
 	// quantize SST and delta, and also computer the histogram
 	// of counts per quantization bin
@@ -264,7 +274,28 @@ quantize_sst_delta(const Mat &_sst, const Mat &_delta, Mat &_omega, const Mat &_
 			tq[i] = cvRound((sst[i] - SST_LOW) / TQ_STEP);
 			dq[i] = cvRound((delta[i] - DELTA_LOW) / DQ_STEP);
 			oq[i] = cvRound((omega[i] - OMEGA_LOW) / OQ_STEP);
-		
+			
+			# TODO: exclude glint
+			if(albedo[i] > 8){
+				cloud.at<int>(tq[i], dq[i], oq[i]) += 1;
+			}
+			if(albedo[i] < 3){
+				ocean.at<int>(tq[i], dq[i], oq[i]) += 1;
+			}
+		}
+	}
+	
+savenpy("ocean.npy", ocean);
+savenpy("cloud.npy", cloud);
+	for(i = 0; i < lutsizes[0]; i++){
+		for(j = 0; j < lutsizes[1]; j++){
+			for(k = 0; k < lutsizes[2]; k++){
+				diff = ocean.at<int>(i, j, k) - cloud.at<int>(i, j, k);
+				if(diff > 0)
+					lut.at<char>(i, j, k) = 0;
+				if(diff < 0)
+					lut.at<char>(i, j, k) = 1;
+			}
 		}
 	}
 }
@@ -618,7 +649,7 @@ int
 main(int argc, char **argv)
 {
 	Mat sst, reynolds, lat, lon, m14, m15, m16, elem, sstdil, sstero, rfilt, sstlap, medf, stdf, blurf;
-	Mat acspo, gradmag, delta, omega, albedo, TQ, DQ, OQ, glabels, feat, lam1, lam2, easyclouds, easyfronts;
+	Mat acspo, gradmag, delta, omega, albedo, TQ, DQ, OQ, lut, glabels, feat, lam1, lam2, easyclouds, easyfronts;
 	int ncid, n;
 	char *path;
 	Resample *r;
@@ -646,6 +677,7 @@ savenpy("lat.npy", lat);
 savenpy("lon.npy", lon);
 savenpy("acspo.npy", acspo);
 savenpy("sst.npy", sst);
+savenpy("albedo.npy", albedo);
 
 	medianBlur(sst, medf, 5);
 savenpy("medf.npy", medf);
@@ -678,9 +710,11 @@ savenpy("delta.npy", delta);
 savenpy("omega.npy", delta);
 
 	logprintf("quantize sst delta...\n");
-	quantize_sst_delta(sst, delta, omega, gradmag, albedo, TQ, DQ, OQ);
+	quantize(sst, delta, omega, gradmag, albedo, TQ, DQ, OQ, lut);
 savenpy("TQ.npy", TQ);
 savenpy("DQ.npy", DQ);
+savenpy("OQ.npy", OQ);
+savenpy("lut.npy", lut);
 
 	exit(1);
 	logprintf("quantized featured...\n");

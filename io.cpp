@@ -129,9 +129,18 @@ savenpy(const char *filename, Mat &mat)
 	if(type == NULL)
 		eprintf("unsupported type: %s\n", type2str(mat.type()));
 	
-	snprintf(hdr, nelem(hdr),
-		"{'descr': '%c%s', 'fortran_order': False, 'shape': (%d, %d),}",
-		bigendian() ? '>' : '<', type, mat.rows, mat.cols);
+	if(mat.dims > 3)
+		eprintf("too many dimensions\n");
+	
+	if(mat.dims == 3){
+		snprintf(hdr, nelem(hdr),
+			"{'descr': '%c%s', 'fortran_order': False, 'shape': (%d, %d, %d),}",
+			bigendian() ? '>' : '<', type, mat.size[0], mat.size[1], mat.size[2]);
+	}else{
+		snprintf(hdr, nelem(hdr),
+			"{'descr': '%c%s', 'fortran_order': False, 'shape': (%d, %d),}",
+			bigendian() ? '>' : '<', type, mat.rows, mat.cols);
+	}
 	hdr[nelem(hdr)-1] = '\0';
 	
 	// magic + header length + header + '\n'
