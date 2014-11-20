@@ -6,8 +6,8 @@
 #define SST_HIGH 315
 #define DELTA_LOW -3
 #define DELTA_HIGH 3
-#define OMEGA_LOW -1
-#define OMEGA_HIGH 15
+#define OMEGA_LOW -3	# TODO: compute from data
+#define OMEGA_HIGH 5	# TODO: compute from data
 #define ALBEDO_LOW 3
 #define ALBEDO_HIGH 4
 #define EDGE_THRESH 1
@@ -15,7 +15,7 @@
 
 #define TQ_STEP 3
 #define DQ_STEP 0.5
-#define OQ_STEP 1
+#define OQ_STEP 0.5
 
 #define TQ_HIST_STEP 1
 #define DQ_HIST_STEP 0.25
@@ -220,12 +220,13 @@ savenpy("labels.npy", labels);
 // TQ, DQ, OQ -- quantized SST, delta, omega respectively (output)
 // lut -- look up table for cloud/ocean in quantization space (output)
 void
-quantize(const Mat &_sst, const Mat &_delta, Mat &_omega, const Mat &_gradmag, Mat &_albedo,
+quantize(const Mat &_sst, const Mat &_delta, Mat &_omega, const Mat &_gradmag, Mat &_albedo, Mat &_acspo,
 	Mat &TQ, Mat &DQ, Mat &OQ, Mat &lut)
 {
 	int i, j, k, diff;
 	float *sst, *delta, *omega, *gm, *albedo;
 	short *tq, *dq, *oq;
+	uchar *acspo;
 	Mat ocean, cloud;
 	
 	CV_Assert(_sst.type() == CV_32FC1);
@@ -233,6 +234,7 @@ quantize(const Mat &_sst, const Mat &_delta, Mat &_omega, const Mat &_gradmag, M
 	CV_Assert(_omega.type() == CV_32FC1);
 	CV_Assert(_gradmag.type() == CV_32FC1);
 	CV_Assert(_albedo.type() == CV_32FC1);
+	CV_Assert(_acspo.type() == CV_8UC1);
 	
 	TQ.create(_sst.size(), CV_16SC1);
 	DQ.create(_sst.size(), CV_16SC1);
@@ -243,6 +245,7 @@ quantize(const Mat &_sst, const Mat &_delta, Mat &_omega, const Mat &_gradmag, M
 	omega = (float*)_omega.data;
 	gm = (float*)_gradmag.data;
 	albedo = (float*)_albedo.data;
+	acspo = _acspo.data;
 	tq = (short*)TQ.data;
 	dq = (short*)DQ.data;
 	oq = (short*)OQ.data;
@@ -275,12 +278,13 @@ quantize(const Mat &_sst, const Mat &_delta, Mat &_omega, const Mat &_gradmag, M
 			dq[i] = cvRound((delta[i] - DELTA_LOW) / DQ_STEP);
 			oq[i] = cvRound((omega[i] - OMEGA_LOW) / OQ_STEP);
 			
-			# TODO: exclude glint
-			if(albedo[i] > 8){
-				cloud.at<int>(tq[i], dq[i], oq[i]) += 1;
-			}
-			if(albedo[i] < 3){
-				ocean.at<int>(tq[i], dq[i], oq[i]) += 1;
+			if((acspo[i] & MaskGlint) == 0){
+				if(albedo[i] > 8){
+					cloud.at<int>(tq[i], dq[i], oq[i]) += 1;
+				}
+				if(albedo[i] < 3){
+					ocean.at<int>(tq[i], dq[i], oq[i]) += 1;
+				}
 			}
 		}
 	}
@@ -710,7 +714,7 @@ savenpy("delta.npy", delta);
 savenpy("omega.npy", delta);
 
 	logprintf("quantize sst delta...\n");
-	quantize(sst, delta, omega, gradmag, albedo, TQ, DQ, OQ, lut);
+	quantize(sst, delta, omega, gradmag, albedo, acspo, TQ, DQ, OQ, lut);
 savenpy("TQ.npy", TQ);
 savenpy("DQ.npy", DQ);
 savenpy("OQ.npy", OQ);
