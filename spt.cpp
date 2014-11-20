@@ -21,7 +21,6 @@
 #define DQ_HIST_STEP 0.25
 #define OQ_HIST_STEP OQ_STEP
 
-
 #define SCALE_LAT(x)	((x) * 10)
 #define SCALE_LON(x)	((x) * 10)
 #define SCALE_SST(x)	(x)
@@ -37,6 +36,10 @@ enum {
 
 enum {
 	DEBUG = 1,
+	
+	LUT_UNKNOWN = -1,
+	LUT_OCEAN = 0,
+	LUT_CLOUD = 1,
 };
 
 void
@@ -223,8 +226,9 @@ void
 quantize(const Mat &_sst, const Mat &_delta, Mat &_omega, const Mat &_gradmag, Mat &_albedo, Mat &_acspo,
 	Mat &TQ, Mat &DQ, Mat &OQ, Mat &lut)
 {
-	int i, j, k, diff;
+	int i, j, k, ncloud, nocean;
 	float *sst, *delta, *omega, *gm, *albedo;
+	double o, c;
 	short *tq, *dq, *oq;
 	uchar *acspo;
 	Mat ocean, cloud;
@@ -261,12 +265,13 @@ quantize(const Mat &_sst, const Mat &_delta, Mat &_omega, const Mat &_gradmag, M
 	ocean.create(3, lutsizes, CV_32SC1);
 	ocean = Scalar(0);
 	lut.create(3, lutsizes, CV_8SC1);
-	lut = Scalar(-1);
+	lut = Scalar(LUT_UNKNOWN);
 	
 	logprintf("LUT size is %dx%dx%d\n", lut.size[0], lut.size[1], lut.size[2]);
 	
 	// quantize SST and delta, and also computer the histogram
 	// of counts per quantization bin
+	ncloud = nocean = 0;
 	for(i = 0; i < (int)_sst.total(); i++){
 		tq[i] = dq[i] = oq[i] = -1;
 		
@@ -281,9 +286,11 @@ quantize(const Mat &_sst, const Mat &_delta, Mat &_omega, const Mat &_gradmag, M
 			if((acspo[i] & MaskGlint) == 0){
 				if(albedo[i] > 8){
 					cloud.at<int>(tq[i], dq[i], oq[i]) += 1;
+					ncloud++;
 				}
 				if(albedo[i] < 3){
 					ocean.at<int>(tq[i], dq[i], oq[i]) += 1;
+					nocean++;
 				}
 			}
 		}
@@ -294,11 +301,12 @@ savenpy("cloud.npy", cloud);
 	for(i = 0; i < lutsizes[0]; i++){
 		for(j = 0; j < lutsizes[1]; j++){
 			for(k = 0; k < lutsizes[2]; k++){
-				diff = ocean.at<int>(i, j, k) - cloud.at<int>(i, j, k);
-				if(diff > 0)
-					lut.at<char>(i, j, k) = 0;
-				if(diff < 0)
-					lut.at<char>(i, j, k) = 1;
+				o = ocean.at<int>(i, j, k) / (double)nocean;
+				c = cloud.at<int>(i, j, k) / (double)ncloud;
+				if(o > c)
+					lut.at<char>(i, j, k) = LUT_OCEAN;
+				if(c > o)
+					lut.at<char>(i, j, k) = LUT_CLOUD;
 			}
 		}
 	}
@@ -503,7 +511,7 @@ remove_inner_feats(Mat &_feat, Mat &_glabels)
 	elem = getStructuringElement(MORPH_RECT, Size(3, 3));
 	erode(_glabels >= 0, _labero, elem);
 	
-	CV_Assert(_labero.type() == CV_8UC1 && _glabels.isContinuous());
+	CV_Assert(_labero.type() == CV_8UC1 && _labero.isContinuous());
 	
 	// remove features if the pixel is in the eroded mask
 	labero = _labero.data;
@@ -526,11 +534,11 @@ nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat
 {
 	int i, k, *indices, *glabels;
 	float *vs, *vd, *lat, *lon, *sst, *delta;
-	Mat _indices;
+	Mat _indices, _labdil;
 	std::vector<float> q(NFEAT), dists(1);
 	std::vector<int> ind(1);
 	flann::SearchParams sparam(4);
-	uchar *acspo, *easyclouds;
+	uchar *acspo, *easyclouds, *labdil;
 	
 	CV_Assert(_feat.type() == CV_32FC1 && _feat.isContinuous()
 		&& _feat.cols == NFEAT);
@@ -566,6 +574,10 @@ logprintf("reduced number of features: %d\n", k);
 	flann::Index idx(_feat, flann::KMeansIndexParams(16, 1));
 	logprintf("searching nearest neighbor indices...\n");
 	
+	// dilate all the clusters
+	dilate(_glabels >= 0, _labdil, getStructuringElement(MORPH_RECT, Size(7, 7)));
+	CV_Assert(_labdil.type() == CV_8UC1 && _labdil.isContinuous());
+	
 	lat = (float*)_lat.data;
 	lon = (float*)_lon.data;
 	sst = (float*)_sst.data;
@@ -573,9 +585,12 @@ logprintf("reduced number of features: %d\n", k);
 	acspo = (uchar*)_acspo.data;
 	glabels = (int*)_glabels.data;
 	easyclouds = (uchar*)_easyclouds.data;
+	labdil = (uchar*)_labdil.data;
 
+	
 	for(i = 0; i < (int)_sst.total(); i++){
-		if(glabels[i] < 0 && easyclouds[i] == 0 && (acspo[i]&MaskCloud) != MaskCloudClear
+		if(labdil[i] && glabels[i] < 0	// regions added by dilation
+		&& easyclouds[i] == 0 && (acspo[i]&MaskCloud) != MaskCloudClear
 		&& !isnan(sst[i]) && !isnan(delta[i])){
 			q[FEAT_LAT] = SCALE_LAT(lat[i]);
 			q[FEAT_LON] = SCALE_LON(lon[i]);
@@ -653,6 +668,7 @@ int
 main(int argc, char **argv)
 {
 	Mat sst, reynolds, lat, lon, m14, m15, m16, elem, sstdil, sstero, rfilt, sstlap, medf, stdf, blurf;
+	Mat m14gm, m15gm, m16gm;
 	Mat acspo, gradmag, delta, omega, albedo, TQ, DQ, OQ, lut, glabels, feat, lam1, lam2, easyclouds, easyfronts;
 	int ncid, n;
 	char *path;
@@ -668,6 +684,7 @@ main(int argc, char **argv)
 	sst = readvar_resampled(ncid, r, "sst_regression");
 	lat = readvar_resampled(ncid, r, "latitude");
 	lon = readvar_resampled(ncid, r, "longitude");
+	// TODO: interpolate acspo
 	acspo = readvar_resampled(ncid, r, "acspo_mask");
 	m14 = readvar_resampled(ncid, r, "brightness_temp_chM14");
 	m15 = readvar_resampled(ncid, r, "brightness_temp_chM15");
@@ -697,7 +714,13 @@ savenpy("easyclouds.npy", easyclouds);
 	
 	logprintf("gradmag...\n");
 	gradientmag(sst, gradmag);
+//	gradientmag(m14, m14gm);
+//	gradientmag(m15, m15gm);
+//	gradientmag(m16, m16gm);
 savenpy("gradmag.npy", gradmag);
+//savenpy("m14gm.npy", m14gm);
+//savenpy("m15gm.npy", m15gm);
+//savenpy("m16gm.npy", m16gm);
 
 	logprintf("localmax...\n");
 	localmax(gradmag, lam2, lam1, 1);
@@ -720,7 +743,6 @@ savenpy("DQ.npy", DQ);
 savenpy("OQ.npy", OQ);
 savenpy("lut.npy", lut);
 
-	exit(1);
 	logprintf("quantized featured...\n");
 	quantized_features(TQ, DQ, lat, lon, sst, delta, glabels, feat);
 savenpy("glabels.npy", glabels);
