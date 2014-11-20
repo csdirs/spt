@@ -6,8 +6,8 @@
 #define SST_HIGH 315
 #define DELTA_LOW -3
 #define DELTA_HIGH 3
-#define OMEGA_LOW -3	# TODO: compute from data
-#define OMEGA_HIGH 5	# TODO: compute from data
+#define OMEGA_LOW -3	// TODO: compute from data
+#define OMEGA_HIGH 5	// TODO: compute from data
 #define ALBEDO_LOW 3
 #define ALBEDO_HIGH 4
 #define EDGE_THRESH 1
