@@ -158,8 +158,11 @@ localmax(Mat &gradmag, Mat &high, Mat &low, int sigma)
 	}
 }
 
+// savefilename returns a filename based on granule path path
+// with suffix sub.
+// e.g. savefilename("/foo/bar/qux.nc", ".png") returns "qux.png"
 char*
-savefilename(char *path)
+savefilename(char *path, const char *suf)
 {
 	int n;
 	char buf[200], *p;
@@ -173,7 +176,7 @@ savefilename(char *path)
 	n = strlen(p) - 3;
 	p = strncpy(buf, p, n);	// don't copy ".nc" extension
 	p += n;
-	strcpy(p, ".png");
+	strcpy(p, suf);
 	return estrdup(buf);
 }
 
@@ -741,7 +744,8 @@ savenpy("omega.npy", delta);
 savenpy("TQ.npy", TQ);
 savenpy("DQ.npy", DQ);
 savenpy("OQ.npy", OQ);
-savenpy("lut.npy", lut);
+savenpy(savefilename(path, "_lut.npy"), lut);
+	exit(0);
 
 	logprintf("quantized featured...\n");
 	quantized_features(TQ, DQ, lat, lon, sst, delta, glabels, feat);
