@@ -3,11 +3,11 @@
 #define GRAD_THRESH 0.3
 #define GRAD_LOW 0.1
 #define SST_LOW 270
-#define SST_HIGH 315
-#define DELTA_LOW -3
+#define SST_HIGH 309
+#define DELTA_LOW -1
 #define DELTA_HIGH 3
-#define OMEGA_LOW -3	// TODO: compute from data
-#define OMEGA_HIGH 5	// TODO: compute from data
+#define OMEGA_LOW -5	// TODO: compute from data
+#define OMEGA_HIGH 0	// TODO: compute from data
 #define ALBEDO_LOW 3
 #define ALBEDO_HIGH 4
 #define EDGE_THRESH 1
@@ -281,7 +281,8 @@ quantize(const Mat &_sst, const Mat &_delta, Mat &_omega, const Mat &_gradmag, M
 		if(gm[i] < GRAD_LOW		// && delta[i] > -0.5
 		&& !isnan(sst[i]) && !isnan(delta[i])
 		&& SST_LOW < sst[i] && sst[i] < SST_HIGH
-		&& DELTA_LOW < delta[i] && delta[i] < DELTA_HIGH){
+		&& DELTA_LOW < delta[i] && delta[i] < DELTA_HIGH
+		&& OMEGA_LOW < omega[i] && omega[i] < OMEGA_HIGH){
 			tq[i] = cvRound((sst[i] - SST_LOW) / TQ_STEP);
 			dq[i] = cvRound((delta[i] - DELTA_LOW) / DQ_STEP);
 			oq[i] = cvRound((omega[i] - OMEGA_LOW) / OQ_STEP);
@@ -680,6 +681,7 @@ main(int argc, char **argv)
 	if(argc != 2)
 		eprintf("usage: %s granule\n", argv[0]);
 	path = argv[1];
+	logprintf("granule: %s\n", path);
 	
 	logprintf("reading and resampling...\n");
 	r = new Resample;
@@ -744,7 +746,8 @@ savenpy("omega.npy", delta);
 savenpy("TQ.npy", TQ);
 savenpy("DQ.npy", DQ);
 savenpy("OQ.npy", OQ);
-savenpy(savefilename(path, "_lut.npy"), lut);
+savenpy("lut.npy", lut);
+//savenpy(savefilename(path, "_lut.npy"), lut);
 	exit(0);
 
 	logprintf("quantized featured...\n");
