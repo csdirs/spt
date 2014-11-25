@@ -120,8 +120,8 @@ void
 savenpy(const char *filename, Mat &mat)
 {
 	FILE *f;
-	int n, npad, nprefix;
-	char hdr[200], pad[16], *name;
+	int i, n, npad, nprefix;
+	char hdr[200], pad[16], *name, *p;
 	uchar len[2];
 	const char *type;
 	
@@ -129,19 +129,19 @@ savenpy(const char *filename, Mat &mat)
 	if(type == NULL)
 		eprintf("unsupported type: %s\n", type2str(mat.type()));
 	
-	if(mat.dims > 3)
-		eprintf("too many dimensions\n");
+	if(mat.dims == 0)
+		eprintf("zero dimensions\n");
 	
-	if(mat.dims == 3){
-		snprintf(hdr, nelem(hdr),
-			"{'descr': '%c%s', 'fortran_order': False, 'shape': (%d, %d, %d),}",
-			bigendian() ? '>' : '<', type, mat.size[0], mat.size[1], mat.size[2]);
-	}else{
-		snprintf(hdr, nelem(hdr),
-			"{'descr': '%c%s', 'fortran_order': False, 'shape': (%d, %d),}",
-			bigendian() ? '>' : '<', type, mat.rows, mat.cols);
+	// TODO: use snprintf to protect against buffer overflow
+	p = hdr;
+	p += sprintf(hdr, "{'descr': '%c%s', 'fortran_order': False, 'shape': (%d",
+			bigendian() ? '>' : '<', type, mat.size[0]);
+	if(mat.dims > 1){
+		for(i = 1; i < mat.dims; i++)
+			p += sprintf(p, ", %d", mat.size[i]);
 	}
-	hdr[nelem(hdr)-1] = '\0';
+	p += sprintf(p, "),}");
+	*p = '\0';
 	
 	// magic + header length + header + '\n'
 	nprefix = nelem(NPY_MAGIC) + 2 + strlen(hdr) + 1;
