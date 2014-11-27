@@ -28,6 +28,7 @@
 
 #define SAVENPY(X)	savenpy(#X ".npy", (X))
 
+// features
 enum {
 	FEAT_LAT,
 	FEAT_LON,
@@ -46,19 +47,7 @@ enum {
 	LUT_LAT_SPLIT = 4,
 };
 
-void
-clipsst(Mat &sst)
-{
-	float *p;
-	int i;
-
-	p = (float*)sst.data;
-	for(i = 0; i < (int)sst.total(); i++){
-		if(p[i] > 1000 || p[i] < -1000)
-			p[i] = NAN;
-	}
-}
-
+// Compute the laplacian filter of image src into dst.
 void
 laplacian(Mat &src, Mat &dst)
 {
@@ -78,7 +67,7 @@ nanblur(const Mat &src, Mat &dst, int ksize)
 	sepFilter2D(src, dst, -1, kernel, kernel);
 }
 
-// Compute the gradient magnitude of src into dst.
+// Compute the gradient magnitude of image src into dst.
 void
 gradientmag(const Mat &src, Mat &dst)
 {
@@ -93,13 +82,12 @@ gradientmag(const Mat &src, Mat &dst)
 	sqrt(dX.mul(dX) + dY.mul(dY), dst);
 }
 
-enum {
-	NStd = 3,
-};
-
 void
-localmax(Mat &gradmag, Mat &high, Mat &low, int sigma)
+localmax(const Mat &gradmag, Mat &high, Mat &low, int sigma)
 {
+	enum {
+		NStd = 3,
+	};
 	int i, j, x, y, winsz;
 	double e, a, dd, mu1, mu2;
 	float *Dxxp, *Dxyp, *Dyyp, *highp, *lowp;
@@ -588,6 +576,7 @@ logprintf("reduced number of features: %d\n", k);
 logprintf("done searching nearest neighbors\n");
 }
 
+// Open NetCDF file at path and initialize r.
 int
 open_resampled(const char *path, Resample *r)
 {
@@ -604,6 +593,8 @@ open_resampled(const char *path, Resample *r)
 	return ncid;
 }
 
+// Read a variable named name from NetCDF dataset ncid,
+// resample the image if necessary and return it.
 Mat
 readvar_resampled(int ncid, Resample *r, const char *name)
 {
@@ -627,6 +618,7 @@ readvar_resampled(int ncid, Resample *r, const char *name)
 
 // Standard deviation filter, implemented as
 //	dst = sqrt(blur(src^2) - blur(src)^2)
+// Ksize is the kernel size.
 void
 stdfilter(const Mat &src, Mat &dst, int ksize)
 {
@@ -740,7 +732,6 @@ savenpy("glabels_nn.npy", glabels);
 	logprintf("laplacian...");
 	laplacian(interpsst, sstlap);
 
-	clipsst(rfilt);
 	cmapimshow("gradmag", gradmag, COLORMAP_JET);
 
 	while(waitKey(0) != 'q')
