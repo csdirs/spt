@@ -78,24 +78,19 @@ nanblur(const Mat &src, Mat &dst, int ksize)
 	sepFilter2D(src, dst, -1, kernel, kernel);
 }
 
+// Compute the gradient magnitude of src into dst.
 void
-gradientmag(Mat &img, Mat &gm)
+gradientmag(const Mat &src, Mat &dst)
 {
 	Mat h = (Mat_<double>(5,1) <<
 		0.036420, 0.248972, 0.429217, 0.248972, 0.036420);
 	Mat hp = (Mat_<double>(5,1) <<
 		0.108415, 0.280353, 0, -0.280353, -0.108415);
-	Mat tmp, dX, dY, ht, hpt;
+	Mat dX, dY;
 
-	// TODO: padding needed here?
-	// TODO: use sepFilter2D instead of filter2D
-	transpose(h, ht);
-	transpose(hp, hpt);
-	filter2D(img, tmp, -1, hp);
-	filter2D(tmp, dX, -1, ht);
-	filter2D(img, tmp, -1, h);
-	filter2D(tmp, dY, -1, hpt);
-	sqrt(dX.mul(dX) + dY.mul(dY), gm);
+	sepFilter2D(src, dX, -1, h, hp);
+	sepFilter2D(src, dY, -1, hp, h);
+	sqrt(dX.mul(dX) + dY.mul(dY), dst);
 }
 
 enum {
