@@ -184,46 +184,6 @@ savefilename(char *path, const char *suf)
 	return estrdup(buf);
 }
 
-/*
-void
-findfronts(Mat &sst, Mat &gradmag)
-{
-	Mat avgsst, lam2, lam1, D, easyclouds, easyfronts, maskf, labels, stats, centoids;
-	int i, nlabels;
-	
-	logprintf("nanblur...\n");
-	nanblur(sst, avgsst, 7);
-savenpy("avgsst.npy", avgsst);
-
-	logprintf("localmax...\n");
-	localmax(gradmag, lam2, lam1, 1);
-savenpy("lam2.npy", lam2);
-
-	D = sst - avgsst;
-savenpy("D.npy", D);
-	easyclouds = (sst < 270) | (gradmag > GRAD_THRESH) | (abs(D) > EDGE_THRESH);
-	// TODO: replace easyclouds with this:
-	//std = stdfilt(sst - medianBlur(sst, 5), 7);
-	//easyclouds = (sst < 270) | (std > STD_THRESH) | (abs(D) > EDGE_THRESH);
-savenpy("easyclouds.npy", easyclouds);
-
-	easyfronts = (sst > 270) & (gradmag > GRAD_THRESH) & (std < STD_THRESH)
-		& (lam2 < -0.01);
-savenpy("easyfronts.npy", easyfronts);
-
-	maskf = (easyclouds == 0) & (easyfronts != 0);
-savenpy("maskf.npy", maskf);
-
-	logprintf("connected components...\n");
-	nlabels = connectedComponentsWithStats(maskf, labels, stats, centoids, 8, CV_32S);
-savenpy("labels.npy", labels);
-	logprintf("number of connected components: %d\n", nlabels);
-	for(i = 0; i < min(10, nlabels); i++){
-		logprintf("connected component %d area: %d\n", i, stats.at<int>(i, CC_STAT_AREA));
-	}
-}
-*/
-
 // Quantize SST and delta values.
 // _sst, _delta, _omega -- SST, delta, and omega images
 // _gradmag, _albedo -- gradient magnitude and albedo image
@@ -786,19 +746,7 @@ savenpy("glabels_nn.npy", glabels);
 	laplacian(interpsst, sstlap);
 
 	clipsst(rfilt);
-	cmapimshow("Rangefilt SST", rfilt, COLORMAP_JET);
-	cmapimshow("Laplacian SST", sstlap, COLORMAP_JET);
-	cmapimshow("acspo", acspo, COLORMAP_JET);
-	cmapimshow("interpsst", interpsst, COLORMAP_JET);
 	cmapimshow("gradmag", gradmag, COLORMAP_JET);
-	cmapimshow("high", high, COLORMAP_JET);
-	cmapimshow("low", low, COLORMAP_JET);
-
-	namedWindow("SortIdx SST", CV_WINDOW_NORMAL|CV_WINDOW_KEEPRATIO);
-*/
-/*
-	cmapimshow("SST", interpsst, COLORMAP_JET);
-	cmapimshow("blur(SSt)", blursst, COLORMAP_JET);
 
 	while(waitKey(0) != 'q')
 		;
