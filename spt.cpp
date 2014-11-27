@@ -417,6 +417,9 @@ quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
 	feat_sst = (float*)_feat.ptr(FEAT_SST);
 	feat_delta = (float*)_feat.ptr(FEAT_DELTA);
 	
+	// TODO:
+	// - average omega and lat per cluster
+	// - query LUT and disregard clusters that are cloud
 	for(i = 0; i < size.area(); i++){
 		lab = cclabels[i];
 		if(lab >= 0){
