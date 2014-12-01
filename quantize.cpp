@@ -53,7 +53,7 @@ quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta, Mat &_omega,
 	lut.create(4, lutsizes, CV_8SC1);
 	lut = Scalar(LUT_UNKNOWN);
 	
-	logprintf("LUT size is %dx%dx%d\n", lut.size[0], lut.size[1], lut.size[2]);
+	logprintf("LUT size is %dx%dx%dx%d\n", lut.size[0], lut.size[1], lut.size[2], lut.size[3]);
 	
 	// quantize SST and delta, and also computer the histogram
 	// of counts per quantization bin
@@ -95,8 +95,6 @@ quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta, Mat &_omega,
 		}
 	}
 	
-SAVENPY(ocean);
-SAVENPY(cloud);
 	for(li = 0; li < lutsizes[0]; li++){
 		for(i = 0; i < lutsizes[1]; i++){
 			for(j = 0; j < lutsizes[2]; j++){
