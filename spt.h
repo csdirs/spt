@@ -12,6 +12,38 @@ using namespace cv;
 #define SQ(x)    ((x)*(x))
 #define SGN(A)   ((A) > 0 ? 1 : ((A) < 0 ? -1 : 0 ))
 #define nelem(x) (sizeof(x)/sizeof((x)[0]))
+#define SAVENPY(X)	savenpy(#X ".npy", (X))
+
+#define GRAD_THRESH 0.3
+#define GRAD_LOW 0.1
+#define SST_LOW 270
+#define SST_HIGH 309
+#define DELTA_LOW -1
+#define DELTA_HIGH 3
+#define OMEGA_LOW -5	// TODO: compute from data
+#define OMEGA_HIGH 0	// TODO: compute from data
+#define ALBEDO_LOW 3
+#define ALBEDO_HIGH 4
+#define EDGE_THRESH 1
+#define STD_THRESH 0.5
+
+#define TQ_STEP 3
+#define DQ_STEP 0.5
+#define OQ_STEP 0.5
+
+#define TQ_HIST_STEP 1
+#define DQ_HIST_STEP 0.25
+#define OQ_HIST_STEP OQ_STEP
+
+enum {
+	DEBUG = 1,
+	
+	LUT_UNKNOWN = -1,
+	LUT_OCEAN = 0,
+	LUT_CLOUD = 1,
+	
+	LUT_LAT_SPLIT = 4,
+};
 
 enum {
 	MaskInvalid       = (1<<0),    		// or Valid
@@ -59,3 +91,18 @@ void savebin(const char *filename, Mat &m);
 void savenpy(const char *filename, Mat &mat);
 Mat readvar(int ncid, const char *name);
 void ncfatal(int n, const char *fmt, ...);
+int open_resampled(const char *path, Resample *r);
+Mat	readvar_resampled(int ncid, Resample *r, const char *name);
+
+
+// filters.cpp
+void	laplacian(Mat &src, Mat &dst);
+void	nanblur(const Mat &src, Mat &dst, int ksize);
+void	gradientmag(const Mat &src, Mat &dst);
+void	localmax(const Mat &gradmag, Mat &high, Mat &low, int sigma);
+void	stdfilter(const Mat &src, Mat &dst, int ksize);
+
+// quantize.cpp
+void	quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta, Mat &_omega,
+	const Mat &_gradmag, Mat &_albedo, Mat &_acspo,
+	Mat &TQ, Mat &DQ, Mat &OQ, Mat &lut);

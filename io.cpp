@@ -192,3 +192,43 @@ ncfatal(int n, const char *fmt, ...)
 	fprintf(stderr, ": %s\n", nc_strerror(n));
 	exit(2);
 }
+
+// Open NetCDF file at path and initialize r.
+int
+open_resampled(const char *path, Resample *r)
+{
+	int ncid, n;
+	Mat lat, acspo;
+	
+	n = nc_open(path, NC_NOWRITE, &ncid);
+	if(n != NC_NOERR)
+		ncfatal(n, "nc_open failed for %s", path);
+	acspo = readvar(ncid, "acspo_mask");
+	lat = readvar(ncid, "latitude");
+	
+	resample_init(r, lat, acspo);
+	return ncid;
+}
+
+// Read a variable named name from NetCDF dataset ncid,
+// resample the image if necessary and return it.
+Mat
+readvar_resampled(int ncid, Resample *r, const char *name)
+{
+	Mat img;
+	
+	if(strcmp(name, "latitude") == 0)
+		return r->slat;
+	if(strcmp(name, "acspo_mask") == 0)
+		return r->sacspo;
+
+	img = readvar(ncid, name);
+	if(strcmp(name, "longitude") == 0){
+		resample_sort(r->sind, img);
+		return img;
+	}
+	
+	logprintf("resampling %s...\n", name);
+	resample_float32(r, img, img);
+	return img;
+}

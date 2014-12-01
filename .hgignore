@@ -2,6 +2,8 @@ syntax: glob
 
 spt
 saveresampled
+lut
+tags
 *.o
 *.nc
 *.png
