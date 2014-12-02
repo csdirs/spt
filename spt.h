@@ -106,3 +106,7 @@ void	stdfilter(const Mat &src, Mat &dst, int ksize);
 void	quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta, Mat &_omega,
 	const Mat &_gradmag, Mat &_albedo, Mat &_acspo,
 	Mat &TQ, Mat &DQ, Mat &OQ, Mat &lut);
+int	quantize_lat(float lat);
+int	quantize_sst(float sst);
+int	quantize_delta(float delta);
+int	quantize_omega(float omega);

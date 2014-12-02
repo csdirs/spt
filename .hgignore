@@ -4,6 +4,7 @@ spt
 saveresampled
 lut
 tags
+guide
 *.o
 *.nc
 *.png

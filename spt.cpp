@@ -49,11 +49,11 @@ savefilename(char *path, const char *suf)
 //	_feat -- features (output)
 int
 quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
-	const float *sst, const float *delta, const float *lat, const float *lon,
-	Mat &_cclabels, Mat &_feat)
+	const float *sst, const float *delta, const float *omega, const float *lat, const float *lon,
+	Mat &lut, Mat &_cclabels, Mat &_feat)
 {
-	Mat _mask, stats, centoids, _ccrename, _count, _avgsst, _avgdelta;
-	double *avgsst, *avgdelta;
+	Mat _mask, stats, centoids, _ccrename, _count, _avglat, _avgsst, _avgdelta, _avgomega;
+	double *avglat, *avgsst, *avgdelta, *avgomega;
 	float *feat_lat, *feat_lon, *feat_sst, *feat_delta;
 	int i, ncc, lab, newlab, *cclabels, *ccrename, *count;
 	uchar *mask;
@@ -92,35 +92,67 @@ quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
 	centoids.release();
 	
 	_count.create(ncc, 1, CV_32SC1);
+	_avglat.create(ncc, 1, CV_64FC1);
 	_avgsst.create(ncc, 1, CV_64FC1);
 	_avgdelta.create(ncc, 1, CV_64FC1);
+	_avgomega.create(ncc, 1, CV_64FC1);
 	count = (int*)_count.data;
+	avglat = (double*)_avglat.data;
 	avgsst = (double*)_avgsst.data;
 	avgdelta = (double*)_avgdelta.data;
+	avgomega = (double*)_avgomega.data;
 	memset(count, 0, sizeof(*count)*ncc);
+	memset(avglat, 0, sizeof(*avglat)*ncc);
 	memset(avgsst, 0, sizeof(*avgsst)*ncc);
 	memset(avgdelta, 0, sizeof(*avgdelta)*ncc);
+	memset(avgomega, 0, sizeof(*avgomega)*ncc);
 	
+	// compute average of lat, sst, delta, and omega per component
 	for(i = 0; i < size.area(); i++){
 		lab = cclabels[i];
 		if(lab >= 0 && !isnan(sst[i]) && !isnan(delta[i])){
+			avglat[lab] += lat[i];
 			avgsst[lab] += sst[i];
 			avgdelta[lab] += delta[i];
+			avgomega[lab] += omega[i];
 			count[lab]++;
 		}
 	}
 	for(lab = 0; lab < ncc; lab++){
+		avglat[lab] /= count[lab];
 		avgsst[lab] /= count[lab];
 		avgdelta[lab] /= count[lab];
+		avgomega[lab] /= count[lab];
 	}
+
+	// query LUT, remove components that are cloud and rename labels to be contiguous.
+	CV_Assert(lut.type() == CV_8SC1 && lut.isContinuous());
+	memset(ccrename, 0, sizeof(*ccrename)*ncc);
+	newlab = 0;
+	for(lab = 0; lab < ncc; lab++){
+		int idx[] = {
+			quantize_lat(avglat[lab]),
+			quantize_sst(avgsst[lab]),
+			quantize_delta(avgdelta[lab]),
+			quantize_omega(avgomega[lab]),
+		};
+		if(lut.at<char>(idx) != LUT_CLOUD)
+			ccrename[lab] = newlab++;
+		else
+			ccrename[lab] = -1;
+	}
+	ncc = newlab;
+	for(i = 0; i < size.area(); i++){
+		lab = cclabels[i];
+		if(lab >= 0)
+			cclabels[i] = ccrename[lab];
+	}
+
 	feat_lat = (float*)_feat.ptr(FEAT_LAT);
 	feat_lon = (float*)_feat.ptr(FEAT_LON);
 	feat_sst = (float*)_feat.ptr(FEAT_SST);
 	feat_delta = (float*)_feat.ptr(FEAT_DELTA);
 	
-	// TODO:
-	// - average omega and lat per cluster
-	// - query LUT and disregard clusters that are cloud
 	for(i = 0; i < size.area(); i++){
 		lab = cclabels[i];
 		if(lab >= 0){
@@ -140,10 +172,10 @@ quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
 // _feat -- features (output)
 void
 quantized_features(const Mat &TQ, const Mat &DQ, const Mat &_lat, const Mat &_lon,
-	const Mat &_sst, const Mat &_delta, Mat &_glabels, Mat &_feat)
+	const Mat &_sst, const Mat &_delta, Mat &_omega, Mat &lut, Mat &_glabels, Mat &_feat)
 {
 	int i, glab, tqmax, dqmax, *glabels;
-	float *lat, *lon, *sst, *delta, *feat;
+	float *lat, *lon, *sst, *delta, *omega, *feat;
 	short *tq, *dq;
 	
 	CV_Assert(TQ.type() == CV_16SC1);
@@ -176,6 +208,7 @@ quantized_features(const Mat &TQ, const Mat &DQ, const Mat &_lat, const Mat &_lo
 	feat = (float*)_feat.data;
 	sst = (float*)_sst.data;
 	delta = (float*)_delta.data;
+	omega = (float*)_omega.data;
 	glabels = (int*)_glabels.data;
 	
 	for(i = 0; i < (int)_feat.total(); i++)
@@ -192,7 +225,7 @@ quantized_features(const Mat &TQ, const Mat &DQ, const Mat &_lat, const Mat &_lo
 			int ncc, lab, *cclabels;
 			
 			ncc = quantized_features_td(_sst.size(), t, d, tq, dq,
-				sst, delta, lat, lon, _cclabels, _feat);
+				sst, delta, omega, lat, lon, lut, _cclabels, _feat);
 			CV_Assert(_cclabels.type() == CV_32SC1 && _cclabels.isContinuous());
 			cclabels = (int*)_cclabels.data;
 			
@@ -401,10 +434,9 @@ SAVENPY(DQ);
 SAVENPY(OQ);
 SAVENPY(lut);
 //savenpy(savefilename(path, "_lut.npy"), lut);
-	exit(0);
 
 	logprintf("quantized featured...\n");
-	quantized_features(TQ, DQ, lat, lon, sst, delta, glabels, feat);
+	quantized_features(TQ, DQ, lat, lon, sst, delta, omega, lut, glabels, feat);
 SAVENPY(glabels);
 SAVENPY(feat);
 

@@ -1,5 +1,38 @@
 #include "spt.h"
 
+int
+quantize_lat(float lat)
+{
+	float la;
+	
+	la = abs(lat);
+	if(la < 30)
+		return 0;
+	if(la < 45)
+		return 1;
+	if(la < 60)
+		return 2;
+	return 3;
+}
+
+int
+quantize_sst(float sst)
+{
+	return cvRound((sst - SST_LOW) * (1.0/TQ_STEP));
+}
+
+int
+quantize_delta(float delta)
+{
+	return cvRound((delta - DELTA_LOW) * (1.0/DQ_STEP));
+}
+
+int
+quantize_omega(float omega)
+{
+	return cvRound((omega - OMEGA_LOW) * (1.0/OQ_STEP));
+}
+
 // Quantize SST and delta values.
 // _sst, _delta, _omega -- SST, delta, and omega images
 // _gradmag, _albedo -- gradient magnitude and albedo image
@@ -11,7 +44,7 @@ quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta, Mat &_omega,
 	Mat &TQ, Mat &DQ, Mat &OQ, Mat &lut)
 {
 	int i, j, k, ncloud[LUT_LAT_SPLIT], nocean[LUT_LAT_SPLIT];
-	float *lat, *sst, *delta, *omega, *gm, *albedo, la;
+	float *lat, *sst, *delta, *omega, *gm, *albedo;
 	double o, c;
 	short *tq, *dq, *oq, li;
 	uchar *acspo;
@@ -42,9 +75,9 @@ quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta, Mat &_omega,
 	// allocate space for LUT and initilize all entries to -1
 	const int lutsizes[] = {
 		LUT_LAT_SPLIT,
-		cvRound((SST_HIGH - SST_LOW) * (1.0/TQ_STEP)) + 1,
-		cvRound((DELTA_HIGH - DELTA_LOW) * (1.0/DQ_STEP)) + 1,
-		cvRound((OMEGA_HIGH - OMEGA_LOW) * (1.0/OQ_STEP)) + 1,
+		quantize_sst(SST_HIGH) + 1,
+		quantize_delta(DELTA_HIGH) + 1,
+		quantize_omega(OMEGA_HIGH) + 1,
 	};
 	cloud.create(4, lutsizes, CV_32SC1);
 	cloud = Scalar(0);
@@ -67,19 +100,10 @@ quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta, Mat &_omega,
 		&& SST_LOW < sst[i] && sst[i] < SST_HIGH
 		&& DELTA_LOW < delta[i] && delta[i] < DELTA_HIGH
 		&& OMEGA_LOW < omega[i] && omega[i] < OMEGA_HIGH){
-			tq[i] = cvRound((sst[i] - SST_LOW) / TQ_STEP);
-			dq[i] = cvRound((delta[i] - DELTA_LOW) / DQ_STEP);
-			oq[i] = cvRound((omega[i] - OMEGA_LOW) / OQ_STEP);
-			la = abs(lat[i]);
-			if(la < 30){
-				li = 0;
-			}else if(la < 45){
-				li = 1;
-			}else if(la < 60){
-				li = 2;
-			}else{
-				li = 3;
-			}
+			tq[i] = quantize_sst(sst[i]);
+			dq[i] = quantize_delta(delta[i]);
+			oq[i] = quantize_omega(omega[i]);
+			li = quantize_lat(lat[i]);
 			
 			if((acspo[i] & MaskGlint) == 0){
 				int idx[] = {li, tq[i], dq[i], oq[i]};
