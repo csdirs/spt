@@ -92,5 +92,5 @@ main(int argc, char **argv)
 		if(ocean[i] > cloud[i])
 			lut[i] = LUT_OCEAN;
 	}
-	SAVENPY(_lut);
+	savenpy("combined_lut.npy", _lut);
 }

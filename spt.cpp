@@ -289,17 +289,20 @@ remove_inner_feats(Mat &_feat, Mat &_glabels)
 // Update labels by nearest label training.
 // _feat -- features (rows containing NaNs are removed)
 // _lat, _lon, _sst, _delta -- latitude, longitude, SST, delta images
+// _easyclouds -- easyclouds mask
+// _gradmag -- gradient magnitude
 // _glabels -- global labels (output)
 static void
-nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat &_delta, Mat &_acspo, Mat _easyclouds, Mat &_glabels)
+nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat &_delta,
+	const Mat &_easyclouds, const Mat &_gradmag, Mat &_glabels)
 {
 	int i, k, *indices, *glabels;
-	float *vs, *vd, *lat, *lon, *sst, *delta;
+	float *vs, *vd, *lat, *lon, *sst, *delta, *gradmag;
 	Mat _indices, _labdil;
 	std::vector<float> q(NFEAT), dists(1);
 	std::vector<int> ind(1);
 	flann::SearchParams sparam(4);
-	uchar *acspo, *easyclouds, *labdil;
+	uchar *easyclouds, *labdil;
 	
 	CV_Assert(_feat.type() == CV_32FC1 && _feat.isContinuous()
 		&& _feat.cols == NFEAT);
@@ -307,9 +310,9 @@ nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat
 	CV_Assert(_lon.type() == CV_32FC1 && _lon.isContinuous());
 	CV_Assert(_sst.type() == CV_32FC1 && _sst.isContinuous());
 	CV_Assert(_delta.type() == CV_32FC1 && _delta.isContinuous());
-	CV_Assert(_acspo.type() == CV_8UC1 && _acspo.isContinuous());
 	CV_Assert(_glabels.type() == CV_32SC1 && _delta.isContinuous());
 	CV_Assert(_easyclouds.type() == CV_8UC1 && _easyclouds.isContinuous());
+	CV_Assert(_gradmag.type() == CV_32FC1 && _easyclouds.isContinuous());
 
 	remove_inner_feats(_feat, _glabels);
 	
@@ -343,16 +346,19 @@ logprintf("reduced number of features: %d\n", k);
 	lon = (float*)_lon.data;
 	sst = (float*)_sst.data;
 	delta = (float*)_delta.data;
-	acspo = (uchar*)_acspo.data;
 	glabels = (int*)_glabels.data;
 	easyclouds = (uchar*)_easyclouds.data;
+	gradmag = (float*)_gradmag.data;
 	labdil = (uchar*)_labdil.data;
 
 	
 	for(i = 0; i < (int)_sst.total(); i++){
 		if(labdil[i] && glabels[i] < 0	// regions added by dilation
-		&& easyclouds[i] == 0 && (acspo[i]&MaskCloud) != MaskCloudClear
-		&& !isnan(sst[i]) && !isnan(delta[i])){
+		&& easyclouds[i] == 0
+		&& !isnan(sst[i]) && !isnan(delta[i])
+		&& gradmag[i] > GRAD_LOW
+		&& SST_LOW < sst[i] && sst[i] < SST_HIGH
+		&& DELTA_LOW < delta[i] && delta[i] < DELTA_HIGH){
 			q[FEAT_LAT] = SCALE_LAT(lat[i]);
 			q[FEAT_LON] = SCALE_LON(lon[i]);
 			q[FEAT_SST] = SCALE_SST(sst[i]);
@@ -440,7 +446,7 @@ SAVENPY(lut);
 SAVENPY(glabels);
 SAVENPY(feat);
 
-	nnlabel(feat, lat, lon, sst, delta, acspo, easyclouds, glabels);
+	nnlabel(feat, lat, lon, sst, delta, easyclouds, gradmag, glabels);
 savenpy("glabels_nn.npy", glabels);
 
 
