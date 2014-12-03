@@ -339,7 +339,7 @@ logprintf("reduced number of features: %d\n", k);
 	logprintf("searching nearest neighbor indices...\n");
 	
 	// dilate all the clusters
-	dilate(_glabels >= 0, _labdil, getStructuringElement(MORPH_RECT, Size(7, 7)));
+	dilate(_glabels >= 0, _labdil, getStructuringElement(MORPH_RECT, Size(11, 11)));
 	CV_Assert(_labdil.type() == CV_8UC1 && _labdil.isContinuous());
 	
 	lat = (float*)_lat.data;
