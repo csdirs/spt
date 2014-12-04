@@ -83,10 +83,10 @@ main(int argc, char **argv)
 	
 	// compute final LUT based on majority rule
 	_lut.create(_cloud.dims, _cloud.size, CV_8SC1);
-	_lut = Scalar(LUT_UNKNOWN);
+	_lut = Scalar(LUT_INVALID);
 	lut = (char*)_lut.data;
 	for(i = 0; i < (int)_cloud.total(); i++){
-		lut[i] = LUT_UNKNOWN;
+		lut[i] = LUT_INVALID;
 		if(cloud[i] > ocean[i])
 			lut[i] = LUT_CLOUD;
 		if(ocean[i] > cloud[i])

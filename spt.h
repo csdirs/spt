@@ -38,7 +38,7 @@ using namespace cv;
 enum {
 	DEBUG = 1,
 	
-	LUT_UNKNOWN = -1,
+	LUT_INVALID = -1,
 	LUT_OCEAN = 0,
 	LUT_CLOUD = 1,
 	
