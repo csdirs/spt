@@ -43,6 +43,9 @@ enum {
 	LUT_CLOUD = 1,
 	
 	LUT_LAT_SPLIT = 4,
+	
+	COMP_INVALID = -1,	// invalid component
+	COMP_SPECKLE = -2,	// component that is too small
 };
 
 enum {

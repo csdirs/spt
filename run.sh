@@ -1,6 +1,6 @@
 #!/bin/sh
 
-make || exit 1
+make -j || exit 1
 
 #for f in /cephfs/fhs/data/in/acspo/www.star.nesdis.noaa.gov/pub/sod/sst/micros_data/acspo_nc/npp/2014-07-11/*.nc
 #do

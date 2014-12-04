@@ -76,12 +76,12 @@ quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
 	// Remove small connected components and rename labels to be contiguous.
 	// Also, set background label 0 (where mask is 0) to -1.
 	newlab = 0;
-	ccrename[0] = -1;
+	ccrename[0] = COMP_INVALID;
 	for(lab = 1; lab < ncc; lab++){
 		if(stats.at<int>(lab, CC_STAT_AREA) >= 200)
 			ccrename[lab] = newlab++;
 		else
-			ccrename[lab] = -1;
+			ccrename[lab] = COMP_SPECKLE;
 	}
 	ncc = newlab;
 	for(i = 0; i < size.area(); i++)
@@ -235,6 +235,8 @@ quantized_features(const Mat &TQ, const Mat &DQ, const Mat &_lat, const Mat &_lo
 					lab = cclabels[i];
 					if(lab >= 0)
 						glabels[i] = glab + lab;
+					else if(lab == COMP_SPECKLE)
+						glabels[i] = COMP_SPECKLE;
 				}
 				glab += ncc;
 			}
@@ -339,7 +341,7 @@ logprintf("reduced number of features: %d\n", k);
 	logprintf("searching nearest neighbor indices...\n");
 	
 	// dilate all the clusters
-	dilate(_glabels >= 0, _labdil, getStructuringElement(MORPH_RECT, Size(11, 11)));
+	dilate(_glabels >= 0, _labdil, getStructuringElement(MORPH_RECT, Size(21, 21)));
 	CV_Assert(_labdil.type() == CV_8UC1 && _labdil.isContinuous());
 	
 	lat = (float*)_lat.data;
@@ -356,7 +358,7 @@ logprintf("reduced number of features: %d\n", k);
 		if(labdil[i] && glabels[i] < 0	// regions added by dilation
 		&& easyclouds[i] == 0
 		&& !isnan(sst[i]) && !isnan(delta[i])
-		&& gradmag[i] > GRAD_LOW
+		&& (gradmag[i] > GRAD_LOW || glabels[i] == COMP_SPECKLE)
 		&& SST_LOW < sst[i] && sst[i] < SST_HIGH
 		&& DELTA_LOW < delta[i] && delta[i] < DELTA_HIGH){
 			q[FEAT_LAT] = SCALE_LAT(lat[i]);
