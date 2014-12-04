@@ -4,7 +4,7 @@
 #define SCALE_LAT(x)	((x) * 10)
 #define SCALE_LON(x)	((x) * 10)
 #define SCALE_SST(x)	(x)
-#define SCALE_DELTA(x)	((x) * 6)
+#define SCALE_DELTA(x)	((x) * 12)
 
 // features
 enum {
@@ -371,6 +371,8 @@ logprintf("reduced number of features: %d\n", k);
 		}
 	}
 logprintf("done searching nearest neighbors\n");
+
+	// TODO: erode glabels by 21, but not where gradmag < GRAD_LOW
 }
 
 int
