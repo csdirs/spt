@@ -314,7 +314,7 @@ nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat
 	CV_Assert(_delta.type() == CV_32FC1 && _delta.isContinuous());
 	CV_Assert(_glabels.type() == CV_32SC1 && _delta.isContinuous());
 	CV_Assert(_easyclouds.type() == CV_8UC1 && _easyclouds.isContinuous());
-	CV_Assert(_gradmag.type() == CV_32FC1 && _easyclouds.isContinuous());
+	CV_Assert(_gradmag.type() == CV_32FC1 && _gradmag.isContinuous());
 
 	remove_inner_feats(_feat, _glabels);
 	
@@ -417,6 +417,7 @@ SAVENPY(albedo);
 	nanblur(sst, blurf, 7);
 	easyclouds = (sst < SST_LOW) | (stdf > STD_THRESH)
 		| (abs(sst - blurf) > EDGE_THRESH);
+SAVENPY(medf);
 SAVENPY(easyclouds);
 	
 	logprintf("gradmag...\n");
