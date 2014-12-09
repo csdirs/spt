@@ -84,6 +84,8 @@ def cmap(name):
 
 def clim(low, high):
     """Set colorbar min/max to low/high.
+    Overwrite the standard plt.clim because gci() returns None
+    for Fig class figures.
     """
     plt.gca().get_children()[2].set_clim(low, high)
     plt.draw()
