@@ -11,66 +11,6 @@ make -j || exit 1
 # "/cephfs/fhs/data/in/acspo/www.star.nesdis.noaa.gov/pub/sod/sst/micros_data/acspo_nc/npp/2014-07-10/ACSPO_V2.30_NPP_VIIRS_2014-07-10_1230-1240_20140713.061812.nc"
 # "/cephfs/fhs/data/in/acspo/www.star.nesdis.noaa.gov/pub/sod/osb/ykihai/VIIRS_Samples_for_Irina/Select/ACSPO_V2.30_NPP_VIIRS_2014-06-20_1710-1719_20140623.071032.nc"
 
-cat > /tmp/spt-loaddata.py <<EOF
-#!/usr/bin/env python2
-
-import matplotlib.pyplot as plt
-import numpy as np
-from matplotlib.widgets import Slider, Button, RadioButtons
-
-def intimage(img, **kwargs):
-    fig, ax = plt.subplots()
-    plt.subplots_adjust(left=0, bottom=0.20)
-    im = ax.imshow(img, **kwargs)
-    cbar = fig.colorbar(im)
-
-    rax = plt.axes([0.025, 0.025, 0.13, 0.13])
-    cmap_names = ['jet', 'gray', 'binary']
-    c = im.get_cmap().name
-    active = 0
-    for i, name in enumerate(cmap_names):
-        if c == name:
-            active = i
-            break
-    radio = RadioButtons(rax, cmap_names, active=active)
-    def cmapfunc(label):
-        im.set_cmap(label)
-        fig.canvas.draw_idle()
-    radio.on_clicked(cmapfunc)
-
-    low, high = im.get_clim()
-    bot = min(low, np.nanmin(img))
-    top = max(high, np.nanmax(img))
-    axmin = plt.axes([0.25, 0.025, 0.60, 0.03])
-    axmax  = plt.axes([0.25, 0.07, 0.60, 0.03])
-    smin = Slider(axmin, 'Min', bot, top, valinit=low)
-    smax = Slider(axmax, 'Max', bot, top, valinit=high)
-
-    def update(val):
-        im.set_clim(smin.val, smax.val)
-        fig.canvas.draw_idle()
-    smin.on_changed(update)
-    smax.on_changed(update)
-
-    flipxbut = Button(plt.axes([0.25, 0.12, 0.1, 0.04]), 'Flip X')
-    def flipx(event):
-        img = im.get_array()
-        im.set_data(img[:,::-1])
-        fig.canvas.draw_idle()
-    flipxbut.on_clicked(flipx)
-
-    flipybut = Button(plt.axes([0.36, 0.12, 0.1, 0.04]), 'Flip Y')
-    def flipx(event):
-        img = im.get_array()
-        im.set_data(img[::-1,:])
-        fig.canvas.draw_idle()
-    flipybut.on_clicked(flipx)
-
-    # return these so we keep a reference to them.
-    # otherwise the widget will no longer be responsive
-    return im, radio, smin, smax, flipxbut, flipybut
-
-EOF
 
 #./spt /cephfs/fhs/data/in/acspo/www.star.nesdis.noaa.gov/pub/sod/sst/micros_data/acspo_nc/npp/2014-07-11/ACSPO_V2.30_NPP_VIIRS_2014-07-11_0000-0010_20140714.005638.nc
 
@@ -85,11 +25,12 @@ DATA_PATH=$DATA_DIR/ACSPO_V2.31b02_NPP_VIIRS_2014-10-30_0400-0409_20141111.00574
 #	dirname=$(echo $(basename $f) | sed 's/ACSPO_.*_NPP_VIIRS_\(.*\)-.*\.nc$/\1_output/')
 #	mkdir -p $dirname
 #	(cd $dirname && 
-#		cp /tmp/spt-loaddata.py loaddata.py &&
+#		cp matplotlib_wrap.py loaddata.py &&
 #		OMP_NUM_THREADS=24 ../spt $f | tee -a loaddata.py
 #	)
 #done
 
+cp matplotlib_wrap.py loaddata.py
 OMP_NUM_THREADS=24 ./spt $DATA_PATH | tee -a loaddata.py
 #OMP_NUM_THREADS=24 ./lut $DATA_DIR/*.nc | tee -a loaddata.py
 
