@@ -381,14 +381,10 @@ main(int argc, char **argv)
 	Mat sst, reynolds, lat, lon, m14, m15, m16, elem, sstdil, sstero, rfilt, sstlap, medf, stdf, blurf;
 	Mat m14gm, m15gm, m16gm;
 	Mat acspo, gradmag, delta, omega, albedo, TQ, DQ, OQ, lut, glabels, feat, lam1, lam2, easyclouds, easyfronts;
+	Mat global_lut;
 	int ncid, n;
 	char *path;
 	Resample *r;
-	
-	Mat global_lut;
-	loadnpy("lut.npy", global_lut);
-	savenpy("lut2.npy", global_lut);
-exit(0);
 
 	if(argc != 2)
 		eprintf("usage: %s granule\n", argv[0]);
@@ -451,8 +447,9 @@ SAVENPY(OQ);
 SAVENPY(lut);
 //savenpy(savefilename(path, "_lut.npy"), lut);
 
+	loadnpy("global_lut/lut.npy", global_lut);
 	logprintf("quantized featured...\n");
-	quantized_features(TQ, DQ, lat, lon, sst, delta, omega, lut, glabels, feat);
+	quantized_features(TQ, DQ, lat, lon, sst, delta, omega, global_lut, glabels, feat);
 SAVENPY(glabels);
 SAVENPY(feat);
 
