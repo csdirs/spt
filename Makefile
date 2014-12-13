@@ -14,6 +14,7 @@ LDFLAGS = -lnetcdf\
 SPT_OFILES = \
 	utils.o\
 	io.o\
+	npy.o\
 	resample.o\
 	connectedcomponents.o\
 	filters.o\
@@ -29,6 +30,7 @@ SAVEANOMALY_OFILES = \
 LUT_OFILES = \
 	utils.o\
 	io.o\
+	npy.o\
 	resample.o\
 	filters.o\
 	quantize.o\

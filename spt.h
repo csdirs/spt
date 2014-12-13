@@ -74,13 +74,13 @@ struct Resample {
 	Mat sind, slat, sacspo, slandmask;
 };
 
-// resample.cpp
+// resample.cc
 Mat resample_unsort(const Mat &sind, const Mat &img);
 Mat resample_sort(const Mat &sind, const Mat &img);
 void resample_init(Resample *r, const Mat &lat, const Mat &acspo);
 void resample_float32(const Resample *r, const Mat &src, Mat &dst);
 
-// utils.cpp
+// utils.cc
 void eprintf(const char *fmt, ...);
 void logprintf(const char *fmt, ...);
 char* estrdup(const char *s);
@@ -89,24 +89,25 @@ const char *type2str(int type);
 void gray2rgb(Mat &src, Mat &dst, int cmap);
 void cmapimshow(string name, Mat &img, int cmap);
 
-// io.cpp
+// io.cc
 void savebin(const char *filename, Mat &m);
-void savenpy(const char *filename, Mat &mat);
-void loadnpy(const char *filename, Mat &mat);
 Mat readvar(int ncid, const char *name);
 void ncfatal(int n, const char *fmt, ...);
 int open_resampled(const char *path, Resample *r);
 Mat	readvar_resampled(int ncid, Resample *r, const char *name);
 
+// npy.cc
+void savenpy(const char *filename, Mat &mat);
+void loadnpy(const char *filename, Mat &mat);
 
-// filters.cpp
+// filters.cc
 void	laplacian(Mat &src, Mat &dst);
 void	nanblur(const Mat &src, Mat &dst, int ksize);
 void	gradientmag(const Mat &src, Mat &dst);
 void	localmax(const Mat &gradmag, Mat &high, Mat &low, int sigma);
 void	stdfilter(const Mat &src, Mat &dst, int ksize);
 
-// quantize.cpp
+// quantize.cc
 void	quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta, Mat &_omega,
 	const Mat &_gradmag, Mat &_albedo, Mat &_acspo,
 	Mat &TQ, Mat &DQ, Mat &OQ, Mat &lut);
