@@ -384,6 +384,11 @@ main(int argc, char **argv)
 	int ncid, n;
 	char *path;
 	Resample *r;
+	
+	Mat global_lut;
+	loadnpy("lut.npy", global_lut);
+	savenpy("lut2.npy", global_lut);
+exit(0);
 
 	if(argc != 2)
 		eprintf("usage: %s granule\n", argv[0]);

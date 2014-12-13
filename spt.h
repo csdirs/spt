@@ -92,6 +92,7 @@ void cmapimshow(string name, Mat &img, int cmap);
 // io.cpp
 void savebin(const char *filename, Mat &m);
 void savenpy(const char *filename, Mat &mat);
+void loadnpy(const char *filename, Mat &mat);
 Mat readvar(int ncid, const char *name);
 void ncfatal(int n, const char *fmt, ...);
 int open_resampled(const char *path, Resample *r);
