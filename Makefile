@@ -49,7 +49,7 @@ $(SPT): $(SPT_OFILES)
 $(LUT): $(LUT_OFILES)
 	$(LD) -o $(LUT) $(LUT_OFILES) $(LDFLAGS)
 
-%.o: %.cpp $(HFILES)
+%.o: %.cc $(HFILES)
 	$(CXX) -c $(CXXFLAGS) $<
 
 clean:
