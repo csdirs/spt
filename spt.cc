@@ -375,6 +375,45 @@ logprintf("done searching nearest neighbors\n");
 	// TODO: erode glabels by 21, but not where gradmag < GRAD_LOW
 }
 
+// Copy a file named src into file named dst.
+void
+copyfile(const char *src, const char *dst)
+{
+	char buf[BUFSIZ];
+	FILE *sf, *df;
+	size_t n, m;
+	
+	if(access(dst, F_OK) != -1)
+		eprintf("%s: file already exists\n", dst);
+	
+	sf = fopen(src, "r");
+	if(sf == NULL)
+		eprintf("opening file %s for reading failed:", src);
+	df = fopen(dst, "w");
+	if(df == NULL)
+		eprintf("opening file %s for writing failed:", dst);
+	
+	for(;;){
+		n = fread(buf, 1, BUFSIZ, sf);
+		if(n == 0)
+			break;
+		m = fwrite(buf, 1, n, df);
+		if(m != n)
+			break;
+	}
+	if(ferror(sf) || ferror(df))
+		eprintf("copy file failed:");
+	if(fclose(sf) || fclose(df))
+		eprintf("closing file failed:");
+}
+
+void
+restore_clearsky(Resample *r, Mat &_acspo, Mat &_glabels)
+{
+	// TODO: unsort _acspo and _glabels
+	// TODO: save cloud mask on least 2 significant bits
+}
+
 int
 main(int argc, char **argv)
 {
@@ -383,12 +422,13 @@ main(int argc, char **argv)
 	Mat acspo, gradmag, delta, omega, albedo, TQ, DQ, OQ, lut, glabels, feat, lam1, lam2, easyclouds, easyfronts;
 	Mat global_lut;
 	int ncid, n;
-	char *path;
+	char *path, *outpath;
 	Resample *r;
 
-	if(argc != 2)
-		eprintf("usage: %s granule\n", argv[0]);
+	if(argc < 2 || argc > 3)
+		eprintf("usage: %s granule [output]\n", argv[0]);
 	path = argv[1];
+	outpath = argc == 3 ? argv[2] : NULL;
 	logprintf("granule: %s\n", path);
 	
 	logprintf("reading and resampling...\n");
@@ -455,7 +495,11 @@ SAVENPY(feat);
 
 	nnlabel(feat, lat, lon, sst, delta, easyclouds, gradmag, glabels);
 savenpy("glabels_nn.npy", glabels);
-
+	
+	if(outpath){
+		logprintf("copying from %s to %s\n", path, outpath);
+		copyfile(path, outpath);
+	}
 
 /*
 	logprintf("dilate...");
