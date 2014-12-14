@@ -447,54 +447,53 @@ main(int argc, char **argv)
 	if(n != NC_NOERR)
 		ncfatal(n, "nc_close failed for %s", path);
 
-SAVENPY(lat);
-SAVENPY(lon);
-SAVENPY(acspo);
-SAVENPY(sst);
-SAVENPY(albedo);
+SAVENC(lat);
+SAVENC(lon);
+SAVENC(acspo);
+SAVENC(sst);
+SAVENC(albedo);
 
 	medianBlur(sst, medf, 5);
 	stdfilter(sst-medf, stdf, 7);
 	nanblur(sst, blurf, 7);
 	easyclouds = (sst < SST_LOW) | (stdf > STD_THRESH)
 		| (abs(sst - blurf) > EDGE_THRESH);
-SAVENPY(medf);
-SAVENPY(easyclouds);
+SAVENC(medf);
+SAVENC(easyclouds);
 	
 	logprintf("gradmag...\n");
 	gradientmag(sst, gradmag);
-SAVENPY(gradmag);
+SAVENC(gradmag);
 
 	logprintf("localmax...\n");
 	localmax(gradmag, lam2, lam1, 1);
-SAVENPY(lam2);
+SAVENC(lam2);
 
 	easyfronts = (sst > SST_LOW) & (gradmag > 0.5)
 		& (stdf < STD_THRESH) & (lam2 < -0.05);
-SAVENPY(easyfronts);
+SAVENC(easyfronts);
 
 	logprintf("delta...\n");
 	delta = m15 - m16;
 	omega = m14 - m15;
-SAVENPY(delta);
-SAVENPY(omega);
+SAVENC(delta);
+SAVENC(omega);
 
 	logprintf("quantize sst delta...\n");
 	quantize(lat, sst, delta, omega, gradmag, albedo, acspo, TQ, DQ, OQ, lut);
-SAVENPY(TQ);
-SAVENPY(DQ);
-SAVENPY(OQ);
-SAVENPY(lut);
-//savenpy(savefilename(path, "_lut.npy"), lut);
+SAVENC(TQ);
+SAVENC(DQ);
+SAVENC(OQ);
+SAVENC(lut);
+//savenc(savefilename(path, "_lut.nc"), lut);
 
 	loadnpy("global_lut/lut.npy", global_lut);
 	logprintf("quantized featured...\n");
 	quantized_features(TQ, DQ, lat, lon, sst, delta, omega, global_lut, glabels, feat);
-SAVENPY(glabels);
-SAVENPY(feat);
+SAVENC(glabels);
 
 	nnlabel(feat, lat, lon, sst, delta, easyclouds, gradmag, glabels);
-savenpy("glabels_nn.npy", glabels);
+savenc("glabels_nn.nc", glabels);
 	
 	if(outpath){
 		logprintf("copying from %s to %s\n", path, outpath);

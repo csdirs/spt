@@ -1,6 +1,7 @@
 #!/usr/bin/env python2
 
 import matplotlib.pyplot as plt
+import netCDF4
 import numpy as np
 from matplotlib.widgets import Slider, Button, RadioButtons
 
@@ -126,3 +127,6 @@ class Fig(object):
         ax.set_adjustable('box-forced')
         plt.colorbar(im, ax=ax)
         return ax
+
+def loadnc(filename):
+    return np.array(netCDF4.Dataset(filename).variables["data"])

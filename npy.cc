@@ -1,24 +1,5 @@
 #include "spt.h"
 
-char*
-fileprefix(const char *path)
-{
-	const char *b;
-	char *p, *s;
-	
-	b = strrchr(path, '/');
-	if(b == NULL)
-		b = path;
-	else
-		b++;
-	
-	p = strdup(b);
-	s = strrchr(p, '.');
-	if(s != NULL)
-		*s = '\0';
-	return p;
-}
-
 static void
 put2(uint16_t v, uchar *a)
 {

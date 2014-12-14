@@ -1,5 +1,24 @@
 #include "spt.h"
 
+char*
+fileprefix(const char *path)
+{
+	const char *b;
+	char *p, *s;
+	
+	b = strrchr(path, '/');
+	if(b == NULL)
+		b = path;
+	else
+		b++;
+	
+	p = strdup(b);
+	s = strrchr(p, '.');
+	if(s != NULL)
+		*s = '\0';
+	return p;
+}
+
 Mat
 readvar(int ncid, const char *name)
 {
@@ -64,6 +83,72 @@ savebin(const char *filename, Mat &m)
 		eprintf("wrote %d/%d items; write failed:", n, m.rows*m.cols);
 	}
 	fclose(f);
+}
+
+void
+savenc(const char *path, Mat &mat)
+{
+	enum {
+		MAXDIMS = 5,
+	};
+	int i, n, ncid, dimids[MAXDIMS], varid, xtype;
+	char *name;
+	const char *dimnames[MAXDIMS] = {
+		"dim0",
+		"dim1",
+		"dim2",
+		"dim3",
+		"dim4",
+	};
+	
+	if(mat.dims > MAXDIMS)
+		eprintf("savenc: too many dimensions %d\n", mat.dims);
+	
+	n = nc_create(path, NC_NETCDF4, &ncid);
+	if(n != NC_NOERR)
+		ncfatal(n, "savenc: creating %s failed", path);
+	
+	for(i = 0; i < mat.dims; i++){
+		n = nc_def_dim(ncid, dimnames[i], mat.size[i], &dimids[i]);
+		if(n != NC_NOERR)
+			ncfatal(n, "savenc: creating dim %d failed", i);
+	}
+	
+	xtype = -1;
+	switch(mat.type()){
+	default:
+		eprintf("savenc: unsupported type %s\n", type2str(mat.type()));
+		break;
+	case CV_8UC1:	xtype = NC_UBYTE; break;
+	case CV_8SC1:	xtype = NC_BYTE; break;
+	case CV_16UC1:	xtype = NC_USHORT; break;
+	case CV_16SC1:	xtype = NC_SHORT; break;
+	case CV_32SC1:	xtype = NC_INT; break;
+	case CV_32FC1:	xtype = NC_FLOAT; break;
+	case CV_64FC1:	xtype = NC_DOUBLE; break;
+	}
+	
+	n = nc_def_var(ncid, "data", xtype, mat.dims, dimids, &varid);
+	if(n != NC_NOERR)
+		ncfatal(n, "savenc: creating variable failed");
+	
+	if(0){	// enable compression?
+		n = nc_def_var_deflate(ncid, varid, 0, 1, 1);
+		if(n != NC_NOERR)
+			ncfatal(n, "savenc: setting deflate parameters failed");
+	}
+
+	n = nc_put_var(ncid, varid, mat.data);
+	if(n != NC_NOERR)
+		ncfatal(n, "savenc: writing variable failed");
+	
+	n = nc_close(ncid);
+	if(n != NC_NOERR)
+		ncfatal(n, "savenc: closing %s failed", path);
+
+	name = fileprefix(path);
+	printf("%s = loadnc(\"%s\")\n", name, path);
+	free(name);
 }
 
 // Print out error for NetCDF error number n and exit the program.

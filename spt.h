@@ -14,6 +14,7 @@ using namespace cv;
 #define SGN(A)   ((A) > 0 ? 1 : ((A) < 0 ? -1 : 0 ))
 #define nelem(x) (sizeof(x)/sizeof((x)[0]))
 #define SAVENPY(X)	savenpy(#X ".npy", (X))
+#define SAVENC(X)	savenc(#X ".nc", (X))
 
 #define GRAD_THRESH 0.3
 #define GRAD_LOW 0.1
@@ -91,11 +92,13 @@ void gray2rgb(Mat &src, Mat &dst, int cmap);
 void cmapimshow(string name, Mat &img, int cmap);
 
 // io.cc
+char	*fileprefix(const char *path);
 void savebin(const char *filename, Mat &m);
 Mat readvar(int ncid, const char *name);
 void ncfatal(int n, const char *fmt, ...);
 int open_resampled(const char *path, Resample *r);
 Mat	readvar_resampled(int ncid, Resample *r, const char *name);
+void	savenc(const char *filename, Mat &mat);
 
 // npy.cc
 void savenpy(const char *filename, Mat &mat);
