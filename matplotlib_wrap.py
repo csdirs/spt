@@ -128,5 +128,17 @@ class Fig(object):
         plt.colorbar(im, ax=ax)
         return ax
 
+
+_SHAREDFIG = None
+
+def imagesh(img, **kwargs):
+    global _SHAREDFIG
+
+    if _SHAREDFIG is None:
+        _SHAREDFIG = Fig(img, **kwargs)
+    else:
+        _SHAREDFIG.imshow(img, **kwargs)
+
+
 def loadnc(filename):
     return np.array(netCDF4.Dataset(filename).variables["data"])
