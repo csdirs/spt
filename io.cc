@@ -61,33 +61,12 @@ readvar(int ncid, const char *name, Mat &img)
 	}
 	
 	for(i = 0; i < ndims; i++)
-		ishape[i] = (int)shape[i];
+		ishape[i] = shape[i];
 	
 	img.create(ndims, ishape, cvt);
 	n = nc_get_var(ncid, varid, img.data);
 	if(n != NC_NOERR)
 		ncfatal(n, "readvar: nc_get_var failed");
-}
-
-void
-savebin(const char *filename, Mat &m)
-{
-	int n;
-	FILE *f;
-
-	if(!m.isContinuous()){
-		eprintf("m not continuous");
-	}
-	f = fopen(filename, "w");
-	if(!f){
-		eprintf("open %s failed:", filename);
-	}
-	n = fwrite(m.data, m.elemSize1(), m.rows*m.cols, f);
-	if(n != m.rows*m.cols){
-		fclose(f);
-		eprintf("wrote %d/%d items; write failed:", n, m.rows*m.cols);
-	}
-	fclose(f);
 }
 
 void
