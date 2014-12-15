@@ -94,7 +94,7 @@ void cmapimshow(string name, Mat &img, int cmap);
 // io.cc
 char	*fileprefix(const char *path);
 void savebin(const char *filename, Mat &m);
-Mat readvar(int ncid, const char *name);
+void	readvar(int ncid, const char *name, Mat&);
 void ncfatal(int n, const char *fmt, ...);
 int open_resampled(const char *path, Resample *r);
 Mat	readvar_resampled(int ncid, Resample *r, const char *name);

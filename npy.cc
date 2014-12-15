@@ -184,7 +184,8 @@ struct NPYHeader {
 };
 
 static int
-cvtype(char *s){
+cvtype(char *s)
+{
 	if(strlen(s) != 3)
 		eprintf("invalid dtype %d\n", s);
 	

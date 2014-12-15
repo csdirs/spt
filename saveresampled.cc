@@ -39,10 +39,10 @@ main(int argc, char **argv)
 	if (n != NC_NOERR)
 		ncfatal(n, "nc_open failed for %s", path);
 	
-	lat = readvar(ncid, "latitude");
-	slon = readvar(ncid, "longitude");
-	acspo = readvar(ncid, "acspo_mask");
-	sst = readvar(ncid, "sst_regression");
+	readvar(ncid, "latitude", lat);
+	readvar(ncid, "longitude", slon);
+	readvar(ncid, "acspo_mask", acspo);
+	readvar(ncid, "sst_regression", sst);
 	
 	resample_init(&r, lat, acspo);
 	resample_float32(&r, sst, sst);

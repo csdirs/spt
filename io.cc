@@ -1,5 +1,9 @@
 #include "spt.h"
 
+enum {
+	MAXDIMS = 5,
+};
+
 char*
 fileprefix(const char *path)
 {
@@ -19,49 +23,50 @@ fileprefix(const char *path)
 	return p;
 }
 
-Mat
-readvar(int ncid, const char *name)
+void
+readvar(int ncid, const char *name, Mat &img)
 {
-	int i, varid, n, dimids[2];
-	size_t shape[2];
+	int i, varid, n, ndims, dimids[MAXDIMS], ishape[MAXDIMS], cvt;
+	size_t shape[MAXDIMS];
 	nc_type nct;
-	Mat img;
 	
 	n = nc_inq_varid(ncid, name, &varid);
 	if(n != NC_NOERR)
 		ncfatal(n, "nc_inq_varid failed for variable %s", name);
-	n = nc_inq_var(ncid, varid, NULL, &nct, NULL, dimids, NULL);
+
+	n = nc_inq_var(ncid, varid, NULL, &nct, &ndims, dimids, NULL);
 	if(n != NC_NOERR)
 		ncfatal(n, "nc_inq_var failed for variable %s", name);
-	for(i = 0; i < 2; i++){
+	if(ndims > MAXDIMS)
+		eprintf("number of dimensions %d > MAXDIMS=%d\n", ndims, MAXDIMS);
+	
+	for(i = 0; i < ndims; i++){
 		n = nc_inq_dimlen(ncid, dimids[i], &shape[i]);
 		if(n != NC_NOERR)
 			ncfatal(n, "nc_inq_dimlen failed for dim %d", dimids[i]);
 	}
+	
+	cvt = -1;
 	switch(nct){
 	default:
 		eprintf("unknown netcdf data type");
 		break;
-	case NC_BYTE:
-		img = Mat::zeros(shape[0], shape[1], CV_8SC1);
-		n = nc_get_var_schar(ncid, varid, (signed char*)img.data);
-		if(n != NC_NOERR)
-			ncfatal(n, "nc_get_var_schar failed");
-		break;
-	case NC_UBYTE:
-		img = Mat::zeros(shape[0], shape[1], CV_8UC1);
-		n = nc_get_var_uchar(ncid, varid, (unsigned char*)img.data);
-		if(n != NC_NOERR)
-			ncfatal(n, "nc_get_var_uchar failed");
-		break;
-	case NC_FLOAT:
-		img = Mat::zeros(shape[0], shape[1], CV_32FC1);
-		n = nc_get_var_float(ncid, varid, (float*)img.data);
-		if(n != NC_NOERR)
-			ncfatal(n, "nc_get_var_float failed");
-		break;
+	case NC_BYTE:	cvt = CV_8SC1; break;
+	case NC_UBYTE:	cvt = CV_8UC1; break;
+	case NC_SHORT:	cvt = CV_16SC1; break;
+	case NC_USHORT:	cvt = CV_16UC1; break;
+	case NC_INT:	cvt = CV_32SC1; break;
+	case NC_FLOAT:	cvt = CV_32FC1; break;
+	case NC_DOUBLE:	cvt = CV_64FC1; break;
 	}
-	return img;
+	
+	for(i = 0; i < ndims; i++)
+		ishape[i] = (int)shape[i];
+	
+	img.create(ndims, ishape, cvt);
+	n = nc_get_var(ncid, varid, img.data);
+	if(n != NC_NOERR)
+		ncfatal(n, "readvar: nc_get_var failed");
 }
 
 void
@@ -88,9 +93,6 @@ savebin(const char *filename, Mat &m)
 void
 savenc(const char *path, Mat &mat)
 {
-	enum {
-		MAXDIMS = 5,
-	};
 	int i, n, ncid, dimids[MAXDIMS], varid, xtype;
 	char *name;
 	const char *dimnames[MAXDIMS] = {
@@ -151,6 +153,19 @@ savenc(const char *path, Mat &mat)
 	free(name);
 }
 
+void
+loadnc(const char *path, Mat &mat)
+{
+	int n, ncid;
+	
+	n = nc_open(path, NC_NOWRITE, &ncid);
+	if(n != NC_NOERR)
+		ncfatal(n, "loadnc: opening %s failed", path);
+	
+	readvar(n, "data", mat);
+	nc_close(n);
+}
+
 // Print out error for NetCDF error number n and exit the program.
 void
 ncfatal(int n, const char *fmt, ...)
@@ -176,8 +191,8 @@ open_resampled(const char *path, Resample *r)
 	n = nc_open(path, NC_NOWRITE, &ncid);
 	if(n != NC_NOERR)
 		ncfatal(n, "nc_open failed for %s", path);
-	acspo = readvar(ncid, "acspo_mask");
-	lat = readvar(ncid, "latitude");
+	readvar(ncid, "acspo_mask", acspo);
+	readvar(ncid, "latitude", lat);
 	
 	resample_init(r, lat, acspo);
 	return ncid;
@@ -195,7 +210,7 @@ readvar_resampled(int ncid, Resample *r, const char *name)
 	if(strcmp(name, "acspo_mask") == 0)
 		return r->sacspo;
 
-	img = readvar(ncid, name);
+	readvar(ncid, name, img);
 	if(strcmp(name, "longitude") == 0){
 		resample_sort(r->sind, img);
 		return img;
