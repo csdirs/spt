@@ -141,7 +141,7 @@ loadnc(const char *path, Mat &mat)
 	if(n != NC_NOERR)
 		ncfatal(n, "loadnc: opening %s failed", path);
 	
-	readvar(n, "data", mat);
+	readvar(ncid, "data", mat);
 	nc_close(n);
 }
 

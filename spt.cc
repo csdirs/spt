@@ -487,7 +487,9 @@ SAVENC(OQ);
 SAVENC(lut);
 //savenc(savefilename(path, "_lut.nc"), lut);
 
-	loadnpy("global_lut/lut.npy", global_lut);
+	loadnc("global_lut/lut.nc", global_lut);
+	logprintf("global LUT size is %dx%dx%dx%d\n",
+		global_lut.size[0], global_lut.size[1], global_lut.size[2], global_lut.size[3]);
 	logprintf("quantized featured...\n");
 	quantized_features(TQ, DQ, lat, lon, sst, delta, omega, global_lut, glabels, feat);
 SAVENC(glabels);

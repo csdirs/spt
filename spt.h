@@ -98,6 +98,7 @@ void ncfatal(int n, const char *fmt, ...);
 int open_resampled(const char *path, Resample *r);
 Mat	readvar_resampled(int ncid, Resample *r, const char *name);
 void	savenc(const char *filename, Mat &mat);
+void loadnc(const char *filename, Mat &mat);
 
 // npy.cc
 void savenpy(const char *filename, Mat &mat);
