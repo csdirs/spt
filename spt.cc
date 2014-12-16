@@ -419,7 +419,7 @@ main(int argc, char **argv)
 {
 	Mat sst, reynolds, lat, lon, m14, m15, m16, elem, sstdil, sstero, rfilt, sstlap, medf, stdf, blurf;
 	Mat m14gm, m15gm, m16gm;
-	Mat acspo, gradmag, delta, omega, albedo, TQ, DQ, OQ, lut, glabels, feat, lam1, lam2, easyclouds, easyfronts;
+	Mat acspo, gradmag, deltamag, delta, omega, albedo, TQ, DQ, OQ, lut, glabels, feat, lam1, lam2, easyclouds, easyfronts;
 	Mat global_lut;
 	int ncid, n;
 	char *path, *outpath;
@@ -453,12 +453,25 @@ SAVENC(acspo);
 SAVENC(sst);
 SAVENC(albedo);
 
+	logprintf("delta...\n");
+	delta = m15 - m16;
+	omega = m14 - m15;
+SAVENC(delta);
+SAVENC(omega);
+
+	Mat deltamedf, deltastdf;
+	
 	medianBlur(sst, medf, 5);
 	stdfilter(sst-medf, stdf, 7);
-	nanblur(sst, blurf, 7);
-	easyclouds = (sst < SST_LOW) | (stdf > STD_THRESH)
-		| (abs(sst - blurf) > EDGE_THRESH);
-SAVENC(medf);
+	
+	medianBlur(delta, deltamedf, 5);
+	logprintf("delta type %s, deltamedf type %s\n", type2str(delta.type()), type2str(deltamedf.type()));
+	stdfilter(delta-deltamedf, deltastdf, 7);
+	//nanblur(sst, blurf, 7);
+	easyclouds = (sst < SST_LOW) | (stdf > STD_THRESH);
+		//| (abs(sst - blurf) > EDGE_THRESH);
+SAVENC(stdf);
+SAVENC(deltastdf);
 SAVENC(easyclouds);
 	
 	logprintf("gradmag...\n");
@@ -473,11 +486,8 @@ SAVENC(lam2);
 		& (stdf < STD_THRESH) & (lam2 < -0.05);
 SAVENC(easyfronts);
 
-	logprintf("delta...\n");
-	delta = m15 - m16;
-	omega = m14 - m15;
-SAVENC(delta);
-SAVENC(omega);
+	gradientmag(delta, deltamag);
+SAVENC(deltamag);
 
 	logprintf("quantize sst delta...\n");
 	quantize(lat, sst, delta, omega, gradmag, albedo, acspo, TQ, DQ, OQ, lut);
