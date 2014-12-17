@@ -1,13 +1,11 @@
-syntax: glob
-
 spt
 saveresampled
 lut
 tags
 guide
+loaddata.py
 *.o
 *.nc
 *.png
-*.bin
 *.npy
 *.orig
