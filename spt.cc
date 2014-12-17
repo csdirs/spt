@@ -407,12 +407,74 @@ copyfile(const char *src, const char *dst)
 		eprintf("closing file failed:");
 }
 
+#define SPT_MASK_NAME	"spt_mask"
+
+// TODO: unsort _acspo and _glabels
+// TODO: save cloud mask on least 2 significant bits
 void
-restore_clearsky(Resample *r, Mat &_acspo, Mat &_glabels)
+write_spt_mask(int ncid, Mat &spt)
 {
-	// TODO: unsort _acspo and _glabels
-	// TODO: save cloud mask on least 2 significant bits
+	int n, varid, dimids[2];
+	
+	CV_Assert(spt.type() == CV_8UC1 && spt.isContinuous());
+	
+	n = nc_inq_varid(ncid, SPT_MASK_NAME, &varid);
+	if(n != NC_NOERR){
+		// variable does not exist, so create it
+		
+		n = nc_inq_dimid(ncid, "scan_lines_along_track", &dimids[0]);
+		if(n != NC_NOERR)
+			ncfatal(n, "nc_inq_dimid failed");
+
+		n = nc_inq_dimid(ncid, "pixels_across_track", &dimids[1]);
+		if(n != NC_NOERR)
+			ncfatal(n, "nc_inq_dimid failed");
+		
+		n = nc_def_var(ncid, SPT_MASK_NAME, NC_UBYTE, nelem(dimids), dimids, &varid);
+		if(n != NC_NOERR)
+			ncfatal(n, "nc_def_var failed");
+	}
+	
+	n = nc_put_var_uchar(ncid, varid, spt.data);
+	if(n != NC_NOERR)
+		ncfatal(n, "nc_putvar_uchar failed");
 }
+
+void
+compute_spt_mask(Mat &_acspo, Mat &_labels, Mat &_spt)
+{
+	int i;
+	uchar *acspo, *labels, *spt, cm;
+	
+	CV_Assert(_acspo.type() == CV_8UC1 && _acspo.isContinuous());
+	CV_Assert(_labels.type() == CV_8SC1 && _acspo.isContinuous());
+	
+	_spt.create(_acspo.size(), CV_8UC1);
+	
+	acspo = _acspo.data;
+	labels = _labels.data;
+	spt = _spt.data;
+	
+	for(i = 0; i < (int)_acspo.total(); i++){
+		cm = acspo[i] & MaskCloud;
+		if((cm == MaskCloudProbably || cm == MaskCloudSure) && labels >= 0)
+			spt[i] = 0;
+		else
+			spt[i] = cm >> MaskCloudOffset;
+	}
+}
+
+// TODO:
+// f = lambda x: 1.0/(1+np.exp(100*(x+0.01)))
+// g = lambda x: 1.0/(1+np.exp(-30*(x-0.15)))
+// h = lambda x: 1.0/(1+np.exp(30*(x-0.15)))
+//
+// fronts: 
+// 	prod1 = f(lam2)*g(gradmag)*h(stdf) > 0.5
+// 	or
+// 	prod2 = f(lam2)*np.clip(gradmag, 0, 1) > 0.5
+//	but not in dilated cloud
+//	and over domain added by nearest neighbor
 
 int
 main(int argc, char **argv)
