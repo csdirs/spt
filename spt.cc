@@ -1,5 +1,6 @@
 #include "spt.h"
 
+#define CHECKMAT(M, T)	CV_Assert((M).type() == (T) && (M).isContinuous())
 
 #define SCALE_LAT(x)	((x) * 10)
 #define SCALE_LON(x)	((x) * 10)
@@ -126,26 +127,28 @@ quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
 	}
 
 	// query LUT, remove components that are cloud and rename labels to be contiguous.
-	CV_Assert(lut.type() == CV_8SC1 && lut.isContinuous());
-	memset(ccrename, 0, sizeof(*ccrename)*ncc);
-	newlab = 0;
-	for(lab = 0; lab < ncc; lab++){
-		int idx[] = {
-			quantize_lat(avglat[lab]),
-			quantize_sst(avgsst[lab]),
-			quantize_delta(avgdelta[lab]),
-			quantize_omega(avgomega[lab]),
-		};
-		if(lut.at<char>(idx) != LUT_CLOUD)
-			ccrename[lab] = newlab++;
-		else
-			ccrename[lab] = -1;
-	}
-	ncc = newlab;
-	for(i = 0; i < size.area(); i++){
-		lab = cclabels[i];
-		if(lab >= 0)
-			cclabels[i] = ccrename[lab];
+	if(0){
+		CV_Assert(lut.type() == CV_8SC1 && lut.isContinuous());
+		memset(ccrename, 0, sizeof(*ccrename)*ncc);
+		newlab = 0;
+		for(lab = 0; lab < ncc; lab++){
+			int idx[] = {
+				quantize_lat(avglat[lab]),
+				quantize_sst(avgsst[lab]),
+				quantize_delta(avgdelta[lab]),
+				quantize_omega(avgomega[lab]),
+			};
+			if(lut.at<char>(idx) != LUT_CLOUD)
+				ccrename[lab] = newlab++;
+			else
+				ccrename[lab] = -1;
+		}
+		ncc = newlab;
+		for(i = 0; i < size.area(); i++){
+			lab = cclabels[i];
+			if(lab >= 0)
+				cclabels[i] = ccrename[lab];
+		}
 	}
 
 	feat_lat = (float*)_feat.ptr(FEAT_LAT);
@@ -468,8 +471,6 @@ compute_spt_mask(Mat &_acspo, Mat &_labels, Mat &_spt)
 			spt[i] = cm >> MaskCloudOffset;
 	}
 }
-
-#define CHECKMAT(M, T)	((M).type() == (T) && (M).isContinuous())
 
 
 // Compute thermal fronts.
