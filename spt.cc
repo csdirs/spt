@@ -49,8 +49,9 @@ savefilename(char *path, const char *suf)
 //	glabels -- global labels (output)
 //	_feat -- features (output)
 int
-quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
-	const float *sst, const float *delta, const float *omega, const float *lat, const float *lon,
+quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
+	const float *sst, const float *delta, const float *omega, const float *anomaly,
+	const float *lat, const float *lon,
 	Mat &lut, Mat &_cclabels, Mat &_feat)
 {
 	Mat _mask, stats, centoids, _ccrename, _count, _avglat, _avgsst, _avgdelta, _avgomega;
@@ -63,7 +64,7 @@ quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
 	_mask.create(size, CV_8UC1);
 	mask = (uchar*)_mask.data;
 	for(i = 0; i < (int)_mask.total(); i++)
-		mask[i] = tq[i] == t && dq[i] == d ? 255 : 0;
+		mask[i] = tq[i] == t && aq[i] == a ? 255 : 0;
 	
 	ncc = connectedComponentsWithStats(_mask, _cclabels, stats, centoids, 8, CV_32S);
 	if(ncc <= 1)
@@ -178,44 +179,34 @@ quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
 // returns the number of clusters in _glabels.
 // 
 int
-quantized_features(const Mat &TQ, const Mat &DQ, const Mat &_lat, const Mat &_lon,
-	const Mat &_sst, const Mat &_delta, Mat &_omega, Mat &lut, Mat &_glabels, Mat &_feat)
+quantized_features(const Mat &TQ, const Mat &AQ, const Mat &_lat, const Mat &_lon,
+	const Mat &_sst, const Mat &_delta, Mat &_omega, Mat &_anomaly, Mat &lut, Mat &_glabels, Mat &_feat)
 {
-	int i, glab, tqmax, dqmax, *glabels;
-	float *lat, *lon, *sst, *delta, *omega, *feat;
-	short *tq, *dq;
+	int i, glab, *glabels;
+	float *lat, *lon, *sst, *delta, *omega, *anomaly, *feat;
+	short *tq, *aq;
 	
 	CV_Assert(TQ.type() == CV_16SC1);
-	CV_Assert(DQ.type() == CV_16SC1);
+	CV_Assert(AQ.type() == CV_16SC1);
 	CV_Assert(_lat.type() == CV_32FC1);
 	CV_Assert(_lon.type() == CV_32FC1);
 	CV_Assert(_sst.type() == CV_32FC1);
 	CV_Assert(_delta.type() == CV_32FC1);
-	
-	// compute max of tq (tqmax) and max of dq (dqmax)
-	tq = (short*)TQ.data;
-	dq = (short*)DQ.data;
-	tqmax = tq[0];
-	dqmax = dq[0];
-	for(i = 1; i < (int)TQ.total(); i++){
-		if(tq[i] > tqmax)
-			tqmax = tq[i];
-		if(dq[i] > dqmax)
-			dqmax = dq[i];
-	}
+	CV_Assert(_omega.type() == CV_32FC1);
+	CV_Assert(_anomaly.type() == CV_32FC1);
 	
 	_glabels.create(_sst.size(), CV_32SC1);
 	_feat.create(NFEAT, _sst.total(), CV_32FC1);
 	
-//logprintf("lat rows=%d cols=%d total=%d; sst rows=%d cols=%d total=%d\n",
-//	_lat.rows, _lat.cols, _lat.total(), _sst.rows, _sst.cols, _sst.total());
-	
+	tq = (short*)TQ.data;
+	aq = (short*)AQ.data;
 	lat = (float*)_lat.data;
 	lon = (float*)_lon.data;
 	feat = (float*)_feat.data;
 	sst = (float*)_sst.data;
 	delta = (float*)_delta.data;
 	omega = (float*)_omega.data;
+	anomaly = (float*)_anomaly.data;
 	glabels = (int*)_glabels.data;
 	
 	for(i = 0; i < (int)_feat.total(); i++)
@@ -225,14 +216,14 @@ quantized_features(const Mat &TQ, const Mat &DQ, const Mat &_lat, const Mat &_lo
 	
 	glab = 0;
 	#pragma omp parallel for
-	for(int t = 0; t < tqmax; t++){
+	for(int t = quantize_sst(SST_LOW); t < quantize_sst(SST_HIGH); t++){
 		#pragma omp parallel for
-		for(int d = 0; d < dqmax; d++){
+		for(int a = quantize_anomaly(ANOMALY_LOW); a < quantize_anomaly(ANOMALY_HIGH); a++){
 			Mat _cclabels;
 			int ncc, lab, *cclabels;
 			
-			ncc = quantized_features_td(_sst.size(), t, d, tq, dq,
-				sst, delta, omega, lat, lon, lut, _cclabels, _feat);
+			ncc = quantized_features_td(_sst.size(), t, a, tq, aq,
+				sst, delta, omega, anomaly, lat, lon, lut, _cclabels, _feat);
 			CV_Assert(_cclabels.type() == CV_32SC1 && _cclabels.isContinuous());
 			cclabels = (int*)_cclabels.data;
 			
@@ -630,7 +621,7 @@ SAVENC(lut);
 	logprintf("global LUT size is %dx%dx%dx%d\n",
 		global_lut.size[0], global_lut.size[1], global_lut.size[2], global_lut.size[3]);
 	logprintf("quantized featured...\n");
-	ncc = quantized_features(TQ, DQ, lat, lon, sst, delta, omega, global_lut, glabels, feat);
+	ncc = quantized_features(TQ, AQ, lat, lon, sst, delta, omega, anomaly, global_lut, glabels, feat);
 SAVENC(glabels);
 
 	glabels_nn = glabels.clone();

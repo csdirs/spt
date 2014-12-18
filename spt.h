@@ -123,3 +123,4 @@ int	quantize_lat(float lat);
 int	quantize_sst(float sst);
 int	quantize_delta(float delta);
 int	quantize_omega(float omega);
+int	quantize_anomaly(float anomaly);
