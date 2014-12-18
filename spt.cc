@@ -464,25 +464,97 @@ compute_spt_mask(Mat &_acspo, Mat &_labels, Mat &_spt)
 	}
 }
 
-// TODO:
-// f = lambda x: 1.0/(1+np.exp(100*(x+0.01)))
-// g = lambda x: 1.0/(1+np.exp(-30*(x-0.15)))
-// h = lambda x: 1.0/(1+np.exp(30*(x-0.15)))
+#define CHECKMAT(M, T)	((M).type() == (T) && (M).isContinuous())
+
+
+// Compute thermal fronts.
+// 
+// lam2 -- local max
+// gradmag -- gradient magnitude
+// stdf -- stdfilter(sst - medianBlur(sst))
+// glabels -- cluster labels before nearest neighbor lookup
+// glabels_nn -- cluster labels after nearest neighbor lookup
+// easyclouds -- easy clouds
+// fronts -- thermal fronts (output)
 //
-// fronts: 
-// 	prod1 = f(lam2)*g(gradmag)*h(stdf) > 0.5
-// 	or
-// 	prod2 = f(lam2)*np.clip(gradmag, 0, 1) > 0.5
-//	but not in dilated cloud
-//	and over domain added by nearest neighbor
+// Let:
+//	f = lambda x: 1.0/(1+exp(100*(x+0.01)))
+//	g = lambda x: 1.0/(1+exp(-30*(x-0.15)))
+//	h = lambda x: 1.0/(1+exp(30*(x-0.15)))
+//	prod1 = f(lam2)*g(gradmag)*h(stdf)
+//	prod2 = f(lam2)*clip(gradmag, 0, 1)
+//
+// fronts must satisfy:
+//	- not in dilated easy clouds
+//	- over domain added by nearest neighbor search
+//	- prod1 > 0.5 || prod2 > 0.5
+void
+thermal_fronts(Mat &_lam2, Mat &_gradmag, Mat &_stdf,
+	Mat &_glabels, Mat &_glabels_nn, Mat &easyclouds, Mat &_fronts)
+{
+	Mat _dilc;
+	float *lam2, *gradmag, *stdf;
+	double m, llam, lmag, lstdf;
+	int i, *glabels, *glabels_nn;
+	uchar *dilc, *fronts;
+	
+	CHECKMAT(_lam2, CV_32FC1);
+	CHECKMAT(_gradmag, CV_32FC1);
+	CHECKMAT(_stdf, CV_32FC1);
+	CHECKMAT(_glabels, CV_32SC1);
+	CHECKMAT(_glabels_nn, CV_32SC1);
+	CHECKMAT(easyclouds, CV_8UC1);
+	_fronts.create(_glabels.size(), CV_8UC1);
+	
+	lam2 = (float*)_lam2.data;
+	gradmag = (float*)_gradmag.data;
+	stdf = (float*)_stdf.data;
+	glabels = (int*)_glabels.data;
+	glabels_nn = (int*)_glabels_nn.data;
+	fronts = _fronts.data;
+	
+	// dilate easyclouds
+	dilate(easyclouds, _dilc, getStructuringElement(MORPH_RECT, Size(7, 7)));
+	CHECKMAT(_dilc, CV_8UC1);
+SAVENC(_dilc);
+	dilc = _dilc.data;
+	
+	// compute thermal fronts image
+	for(i = 0; i < (int)_glabels.total(); i++){
+		fronts[i] = 0;
+		
+		// continue if in (dilated) easyclouds
+		// or not in domain added by nearest neighbor
+		if(dilc[i] || glabels_nn[i] < 0 || glabels[i] >= 0)
+			continue;
+		
+		// it's front if logit'(lam2) * clip(gradmag, 0, 1) > 0.5
+		llam = 1.0/(1+exp(100*(lam2[i]+0.01)));
+		m = gradmag[i];
+		if(m > 1)
+			m = 1;
+		if(llam*m > 0.5){
+			fronts[i] = 255;
+			continue;
+		}
+		
+		// it's front if logit'(lam2)*logit''(stdf)*logit'''(stdf) > 0.5
+		lmag = 1.0/(1+exp(-30*(gradmag[i]-0.15)));
+		lstdf = 1.0/(1+exp(30*(stdf[i]-0.15)));
+		if(llam*lmag*lstdf > 0.5)
+			fronts[i] = 255;
+	}
+}
 
 int
 main(int argc, char **argv)
 {
-	Mat sst, reynolds, lat, lon, m14, m15, m16, elem, sstdil, sstero, rfilt, sstlap, medf, stdf, blurf;
-	Mat m14gm, m15gm, m16gm;
-	Mat acspo, gradmag, deltamag, delta, omega, albedo, TQ, DQ, OQ, lut, glabels, feat, lam1, lam2, easyclouds, easyfronts;
-	Mat global_lut;
+	Mat sst, reynolds, lat, lon, m14, m15, m16,
+		elem, sstdil, sstero, rfilt, sstlap, medf, stdf, blurf,
+		m14gm, m15gm, m16gm,
+		acspo, gradmag, deltamag, delta, omega, albedo, TQ, DQ, OQ,
+		lut, glabels, glabels_nn, feat, lam1, lam2,
+		easyclouds, easyfronts, fronts, global_lut;
 	int ncid, n;
 	char *path, *outpath;
 	Resample *r;
@@ -566,9 +638,13 @@ SAVENC(lut);
 	quantized_features(TQ, DQ, lat, lon, sst, delta, omega, global_lut, glabels, feat);
 SAVENC(glabels);
 
-	nnlabel(feat, lat, lon, sst, delta, easyclouds, gradmag, glabels);
+	glabels_nn = glabels.clone();
+	nnlabel(feat, lat, lon, sst, delta, easyclouds, gradmag, glabels_nn);
 savenc("glabels_nn.nc", glabels);
 	
+	thermal_fronts(lam2, gradmag, stdf, glabels, glabels_nn, easyclouds, fronts);
+SAVENC(fronts);
+
 	if(outpath){
 		logprintf("copying from %s to %s\n", path, outpath);
 		copyfile(path, outpath);
