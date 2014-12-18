@@ -22,8 +22,10 @@ using namespace cv;
 #define SST_HIGH 309
 #define DELTA_LOW -1
 #define DELTA_HIGH 3
-#define OMEGA_LOW -5	// TODO: compute from data
-#define OMEGA_HIGH 0	// TODO: compute from data
+#define OMEGA_LOW -5
+#define OMEGA_HIGH 0
+#define ANOMALY_HIGH 10
+#define ANOMALY_LOW -10
 #define ALBEDO_LOW 3
 #define ALBEDO_HIGH 4
 #define EDGE_THRESH 1
@@ -32,6 +34,7 @@ using namespace cv;
 #define TQ_STEP 3
 #define DQ_STEP 0.5
 #define OQ_STEP 0.5
+#define AQ_STEP 1
 
 #define TQ_HIST_STEP 1
 #define DQ_HIST_STEP 0.25
@@ -112,9 +115,10 @@ void	localmax(const Mat &gradmag, Mat &high, Mat &low, int sigma);
 void	stdfilter(const Mat &src, Mat &dst, int ksize);
 
 // quantize.cc
-void	quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta, Mat &_omega,
+void	quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta,
+	const Mat &_omega, const Mat &_anomaly,
 	const Mat &_gradmag, Mat &_albedo, Mat &_acspo,
-	Mat &TQ, Mat &DQ, Mat &OQ, Mat &lut);
+	Mat &TQ, Mat &DQ, Mat &OQ, Mat &AQ, Mat &lut);
 int	quantize_lat(float lat);
 int	quantize_sst(float sst);
 int	quantize_delta(float delta);

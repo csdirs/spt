@@ -190,7 +190,8 @@ readvar_resampled(int ncid, Resample *r, const char *name)
 		return r->sacspo;
 
 	readvar(ncid, name, img);
-	if(strcmp(name, "longitude") == 0){
+	if(strcmp(name, "longitude") == 0
+	|| strcmp(name, "sst_reynolds") == 0){
 		resample_sort(r->sind, img);
 		return img;
 	}

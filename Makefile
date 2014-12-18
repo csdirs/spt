@@ -40,7 +40,7 @@ HFILES = spt.h\
 	connectedcomponents.h\
 	
 
-all: $(SPT) $(SAVERESAMPLED) $(LUT)
+all: $(SPT) $(SAVERESAMPLED)
 
 $(SAVERESAMPLED): $(SAVEANOMALY_OFILES)
 	$(LD) -o $(SAVERESAMPLED) $(SAVEANOMALY_OFILES) $(LDFLAGS)

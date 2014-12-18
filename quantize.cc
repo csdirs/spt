@@ -33,26 +33,34 @@ quantize_omega(float omega)
 	return cvRound((omega - OMEGA_LOW) * (1.0/OQ_STEP));
 }
 
+int
+quantize_anomaly(float anomaly)
+{
+	return cvRound((anomaly - ANOMALY_LOW) * (1.0/AQ_STEP));
+}
+
 // Quantize SST and delta values.
 // _sst, _delta, _omega -- SST, delta, and omega images
 // _gradmag, _albedo -- gradient magnitude and albedo image
 // TQ, DQ, OQ -- quantized SST, delta, omega respectively (output)
 // lut -- look up table for cloud/ocean in quantization space (output)
 void
-quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta, Mat &_omega,
+quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta,
+	const Mat &_omega, const Mat &_anomaly,
 	const Mat &_gradmag, Mat &_albedo, Mat &_acspo,
-	Mat &TQ, Mat &DQ, Mat &OQ, Mat &lut)
+	Mat &TQ, Mat &DQ, Mat &OQ, Mat &AQ, Mat &lut)
 {
 	int i, j, k, ncloud[LUT_LAT_SPLIT], nocean[LUT_LAT_SPLIT];
-	float *lat, *sst, *delta, *omega, *gm, *albedo;
+	float *lat, *sst, *delta, *omega, *anomaly, *gm, *albedo;
 	double o, c;
-	short *tq, *dq, *oq, li;
+	short *tq, *dq, *oq, *aq, li;
 	uchar *acspo;
 	Mat ocean, cloud;
 	
 	CV_Assert(_sst.type() == CV_32FC1);
 	CV_Assert(_delta.type() == CV_32FC1);
 	CV_Assert(_omega.type() == CV_32FC1);
+	CV_Assert(_anomaly.type() == CV_32FC1);
 	CV_Assert(_gradmag.type() == CV_32FC1);
 	CV_Assert(_albedo.type() == CV_32FC1);
 	CV_Assert(_acspo.type() == CV_8UC1);
@@ -60,17 +68,20 @@ quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta, Mat &_omega,
 	TQ.create(_sst.size(), CV_16SC1);
 	DQ.create(_sst.size(), CV_16SC1);
 	OQ.create(_sst.size(), CV_16SC1);
+	AQ.create(_sst.size(), CV_16SC1);
 	
 	lat = (float*)_lat.data;
 	sst = (float*)_sst.data;
 	delta = (float*)_delta.data;
 	omega = (float*)_omega.data;
+	anomaly = (float*)_anomaly.data;
 	gm = (float*)_gradmag.data;
 	albedo = (float*)_albedo.data;
 	acspo = _acspo.data;
 	tq = (short*)TQ.data;
 	dq = (short*)DQ.data;
 	oq = (short*)OQ.data;
+	aq = (short*)OQ.data;
 	
 	// allocate space for LUT and initilize all entries to -1
 	const int lutsizes[] = {
@@ -99,10 +110,12 @@ quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta, Mat &_omega,
 		&& !isnan(sst[i]) && !isnan(delta[i])
 		&& SST_LOW < sst[i] && sst[i] < SST_HIGH
 		&& DELTA_LOW < delta[i] && delta[i] < DELTA_HIGH
-		&& OMEGA_LOW < omega[i] && omega[i] < OMEGA_HIGH){
+		&& OMEGA_LOW < omega[i] && omega[i] < OMEGA_HIGH
+		&& ANOMALY_LOW < anomaly[i] && anomaly[i] < ANOMALY_HIGH){
 			tq[i] = quantize_sst(sst[i]);
 			dq[i] = quantize_delta(delta[i]);
 			oq[i] = quantize_omega(omega[i]);
+			aq[i] = quantize_anomaly(anomaly[i]);
 			li = quantize_lat(lat[i]);
 			
 			if((acspo[i] & MaskGlint) == 0){

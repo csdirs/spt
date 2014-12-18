@@ -555,10 +555,10 @@ SAVENC(_dilc);
 int
 main(int argc, char **argv)
 {
-	Mat sst, reynolds, lat, lon, m14, m15, m16,
+	Mat sst, cmc, anomaly, lat, lon, m14, m15, m16,
 		elem, sstdil, sstero, rfilt, sstlap, medf, stdf, blurf,
 		m14gm, m15gm, m16gm,
-		acspo, gradmag, deltamag, delta, omega, albedo, TQ, DQ, OQ,
+		acspo, gradmag, delta, omega, albedo, TQ, DQ, OQ, AQ,
 		lut, glabels, glabels_nn, feat, lam1, lam2,
 		easyclouds, easyfronts, fronts, global_lut;
 	int ncid, n, ncc;
@@ -575,6 +575,7 @@ main(int argc, char **argv)
 	r = new Resample;
 	ncid = open_resampled(path, r);
 	sst = readvar_resampled(ncid, r, "sst_regression");
+	cmc = readvar_resampled(ncid, r, "sst_reynolds");
 	lat = readvar_resampled(ncid, r, "latitude");
 	lon = readvar_resampled(ncid, r, "longitude");
 	// TODO: interpolate acspo
@@ -593,44 +594,32 @@ SAVENC(acspo);
 SAVENC(sst);
 SAVENC(albedo);
 
-	logprintf("delta...\n");
+	logprintf("gradmag, etc. ...\n");
 	delta = m15 - m16;
 	omega = m14 - m15;
+	anomaly = sst - cmc;
+	gradientmag(sst, gradmag);
+	localmax(gradmag, lam2, lam1, 1);
 SAVENC(delta);
 SAVENC(omega);
+SAVENC(anomaly);
+SAVENC(gradmag);
+SAVENC(lam2);
 
-	Mat deltamedf, deltastdf;
-	
 	medianBlur(sst, medf, 5);
 	stdfilter(sst-medf, stdf, 7);
-	
-	medianBlur(delta, deltamedf, 5);
-	logprintf("delta type %s, deltamedf type %s\n", type2str(delta.type()), type2str(deltamedf.type()));
-	stdfilter(delta-deltamedf, deltastdf, 7);
 	//nanblur(sst, blurf, 7);
 	easyclouds = (sst < SST_LOW) | (stdf > STD_THRESH);
 		//| (abs(sst - blurf) > EDGE_THRESH);
 SAVENC(stdf);
-SAVENC(deltastdf);
 SAVENC(easyclouds);
-	
-	logprintf("gradmag...\n");
-	gradientmag(sst, gradmag);
-SAVENC(gradmag);
-
-	logprintf("localmax...\n");
-	localmax(gradmag, lam2, lam1, 1);
-SAVENC(lam2);
 
 	easyfronts = (sst > SST_LOW) & (gradmag > 0.5)
 		& (stdf < STD_THRESH) & (lam2 < -0.05);
 SAVENC(easyfronts);
 
-	gradientmag(delta, deltamag);
-SAVENC(deltamag);
-
 	logprintf("quantize sst delta...\n");
-	quantize(lat, sst, delta, omega, gradmag, albedo, acspo, TQ, DQ, OQ, lut);
+	quantize(lat, sst, delta, omega, anomaly, gradmag, albedo, acspo, TQ, DQ, OQ, AQ, lut);
 SAVENC(TQ);
 SAVENC(DQ);
 SAVENC(OQ);
