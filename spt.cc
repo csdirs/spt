@@ -168,9 +168,13 @@ quantized_features_td(Size size, int t, int d, const short *tq, const short *dq,
 // Cluster and find features.
 // TQ, DQ -- quantized SST and delta images
 // _lat, _lon, _sst, _delta -- latitude, longitude, SST, delta images
+// lut -- lookup table
 // _glabels -- global labels (output)
 // _feat -- features (output)
-void
+//
+// returns the number of clusters in _glabels.
+// 
+int
 quantized_features(const Mat &TQ, const Mat &DQ, const Mat &_lat, const Mat &_lon,
 	const Mat &_sst, const Mat &_delta, Mat &_omega, Mat &lut, Mat &_glabels, Mat &_feat)
 {
@@ -243,6 +247,7 @@ quantized_features(const Mat &TQ, const Mat &DQ, const Mat &_lat, const Mat &_lo
 		}
 	}
 	transpose(_feat, _feat);
+	return glab;
 }
 
 // Remove features from _feat that are not on the border of clusters defined
@@ -478,9 +483,9 @@ compute_spt_mask(Mat &_acspo, Mat &_labels, Mat &_spt)
 // fronts -- thermal fronts (output)
 //
 // Let:
-//	f = lambda x: 1.0/(1+exp(100*(x+0.01)))
-//	g = lambda x: 1.0/(1+exp(-30*(x-0.15)))
-//	h = lambda x: 1.0/(1+exp(30*(x-0.15)))
+//	f(x) = 1.0/(1+exp(100*(x+0.01)))
+//	g(x) = 1.0/(1+exp(-30*(x-0.15)))
+//	h(x) = 1.0/(1+exp(30*(x-0.15)))
 //	prod1 = f(lam2)*g(gradmag)*h(stdf)
 //	prod2 = f(lam2)*clip(gradmag, 0, 1)
 //
@@ -490,7 +495,7 @@ compute_spt_mask(Mat &_acspo, Mat &_labels, Mat &_spt)
 //	- prod1 > 0.5 || prod2 > 0.5
 void
 thermal_fronts(Mat &_lam2, Mat &_gradmag, Mat &_stdf,
-	Mat &_glabels, Mat &_glabels_nn, Mat &easyclouds, Mat &_fronts)
+	int ncc, Mat &_glabels, Mat &_glabels_nn, Mat &easyclouds, Mat &_fronts)
 {
 	Mat _dilc;
 	float *lam2, *gradmag, *stdf;
@@ -555,7 +560,7 @@ main(int argc, char **argv)
 		acspo, gradmag, deltamag, delta, omega, albedo, TQ, DQ, OQ,
 		lut, glabels, glabels_nn, feat, lam1, lam2,
 		easyclouds, easyfronts, fronts, global_lut;
-	int ncid, n;
+	int ncid, n, ncc;
 	char *path, *outpath;
 	Resample *r;
 
@@ -635,14 +640,14 @@ SAVENC(lut);
 	logprintf("global LUT size is %dx%dx%dx%d\n",
 		global_lut.size[0], global_lut.size[1], global_lut.size[2], global_lut.size[3]);
 	logprintf("quantized featured...\n");
-	quantized_features(TQ, DQ, lat, lon, sst, delta, omega, global_lut, glabels, feat);
+	ncc = quantized_features(TQ, DQ, lat, lon, sst, delta, omega, global_lut, glabels, feat);
 SAVENC(glabels);
 
 	glabels_nn = glabels.clone();
 	nnlabel(feat, lat, lon, sst, delta, easyclouds, gradmag, glabels_nn);
 savenc("glabels_nn.nc", glabels);
 	
-	thermal_fronts(lam2, gradmag, stdf, glabels, glabels_nn, easyclouds, fronts);
+	thermal_fronts(lam2, gradmag, stdf, ncc, glabels, glabels_nn, easyclouds, fronts);
 SAVENC(fronts);
 
 	if(outpath){
