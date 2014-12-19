@@ -5,14 +5,14 @@
 #define SCALE_LAT(x)	((x) * 10)
 #define SCALE_LON(x)	((x) * 10)
 #define SCALE_SST(x)	(x)
-#define SCALE_DELTA(x)	((x) * 12)
+#define SCALE_ANOM(x)	(x)
 
 // features
 enum {
 	FEAT_LAT,
 	FEAT_LON,
 	FEAT_SST,
-	FEAT_DELTA,
+	FEAT_ANOM,
 	NFEAT,
 };
 
@@ -54,9 +54,9 @@ quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
 	const float *lat, const float *lon,
 	Mat &lut, Mat &_cclabels, Mat &_feat)
 {
-	Mat _mask, stats, centoids, _ccrename, _count, _avglat, _avgsst, _avgdelta, _avgomega;
-	double *avglat, *avgsst, *avgdelta, *avgomega;
-	float *feat_lat, *feat_lon, *feat_sst, *feat_delta;
+	Mat _mask, stats, centoids, _ccrename, _count, _avglat, _avgsst, _avgdelta, _avgomega, _avganom;
+	double *avglat, *avgsst, *avgdelta, *avgomega, *avganom;
+	float *feat_lat, *feat_lon, *feat_sst, *feat_anom;
 	int i, ncc, lab, newlab, *cclabels, *ccrename, *count;
 	uchar *mask;
 	
@@ -98,25 +98,29 @@ quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
 	_avgsst.create(ncc, 1, CV_64FC1);
 	_avgdelta.create(ncc, 1, CV_64FC1);
 	_avgomega.create(ncc, 1, CV_64FC1);
+	_avganom.create(ncc, 1, CV_64FC1);
 	count = (int*)_count.data;
 	avglat = (double*)_avglat.data;
 	avgsst = (double*)_avgsst.data;
 	avgdelta = (double*)_avgdelta.data;
 	avgomega = (double*)_avgomega.data;
+	avganom = (double*)_avganom.data;
 	memset(count, 0, sizeof(*count)*ncc);
 	memset(avglat, 0, sizeof(*avglat)*ncc);
 	memset(avgsst, 0, sizeof(*avgsst)*ncc);
 	memset(avgdelta, 0, sizeof(*avgdelta)*ncc);
 	memset(avgomega, 0, sizeof(*avgomega)*ncc);
+	memset(avganom, 0, sizeof(*avganom)*ncc);
 	
-	// compute average of lat, sst, delta, and omega per component
+	// compute average of lat, sst, delta, omega and anomaly per component
 	for(i = 0; i < size.area(); i++){
 		lab = cclabels[i];
-		if(lab >= 0 && !isnan(sst[i]) && !isnan(delta[i])){
+		if(lab >= 0 && !isnan(sst[i]) && !isnan(delta[i]) && !isnan(omega[i]) && !isnan(anomaly[i])){
 			avglat[lab] += lat[i];
 			avgsst[lab] += sst[i];
 			avgdelta[lab] += delta[i];
 			avgomega[lab] += omega[i];
+			avganom[lab] += anomaly[i];
 			count[lab]++;
 		}
 	}
@@ -125,6 +129,7 @@ quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
 		avgsst[lab] /= count[lab];
 		avgdelta[lab] /= count[lab];
 		avgomega[lab] /= count[lab];
+		avganom[lab] /= count[lab];
 	}
 
 	// query LUT, remove components that are cloud and rename labels to be contiguous.
@@ -155,7 +160,7 @@ quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
 	feat_lat = (float*)_feat.ptr(FEAT_LAT);
 	feat_lon = (float*)_feat.ptr(FEAT_LON);
 	feat_sst = (float*)_feat.ptr(FEAT_SST);
-	feat_delta = (float*)_feat.ptr(FEAT_DELTA);
+	feat_anom = (float*)_feat.ptr(FEAT_ANOM);
 	
 	for(i = 0; i < size.area(); i++){
 		lab = cclabels[i];
@@ -163,7 +168,7 @@ quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
 			feat_lat[i] = SCALE_LAT(lat[i]);
 			feat_lon[i] = SCALE_LON(lon[i]);
 			feat_sst[i] = SCALE_SST(avgsst[lab]);
-			feat_delta[i] = SCALE_DELTA(avgdelta[lab]);
+			feat_anom[i] = SCALE_ANOM(avganom[lab]);
 		}
 	}
 	return ncc;
@@ -294,11 +299,11 @@ remove_inner_feats(Mat &_feat, Mat &_glabels)
 // _gradmag -- gradient magnitude
 // _glabels -- global labels (output)
 static void
-nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat &_delta,
+nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat &_anomaly,
 	const Mat &_easyclouds, const Mat &_gradmag, Mat &_glabels)
 {
 	int i, k, *indices, *glabels;
-	float *vs, *vd, *lat, *lon, *sst, *delta, *gradmag;
+	float *vs, *vd, *lat, *lon, *sst, *anomaly, *gradmag;
 	Mat _indices, _labdil;
 	std::vector<float> q(NFEAT), dists(1);
 	std::vector<int> ind(1);
@@ -310,8 +315,8 @@ nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat
 	CV_Assert(_lat.type() == CV_32FC1 && _lat.isContinuous());
 	CV_Assert(_lon.type() == CV_32FC1 && _lon.isContinuous());
 	CV_Assert(_sst.type() == CV_32FC1 && _sst.isContinuous());
-	CV_Assert(_delta.type() == CV_32FC1 && _delta.isContinuous());
-	CV_Assert(_glabels.type() == CV_32SC1 && _delta.isContinuous());
+	CV_Assert(_anomaly.type() == CV_32FC1 && _anomaly.isContinuous());
+	CV_Assert(_glabels.type() == CV_32SC1 && _glabels.isContinuous());
 	CV_Assert(_easyclouds.type() == CV_8UC1 && _easyclouds.isContinuous());
 	CV_Assert(_gradmag.type() == CV_32FC1 && _gradmag.isContinuous());
 
@@ -346,7 +351,7 @@ logprintf("reduced number of features: %d\n", k);
 	lat = (float*)_lat.data;
 	lon = (float*)_lon.data;
 	sst = (float*)_sst.data;
-	delta = (float*)_delta.data;
+	anomaly = (float*)_anomaly.data;
 	glabels = (int*)_glabels.data;
 	easyclouds = (uchar*)_easyclouds.data;
 	gradmag = (float*)_gradmag.data;
@@ -356,16 +361,16 @@ logprintf("reduced number of features: %d\n", k);
 	for(i = 0; i < (int)_sst.total(); i++){
 		if(labdil[i] && glabels[i] < 0	// regions added by dilation
 		&& easyclouds[i] == 0
-		&& !isnan(sst[i]) && !isnan(delta[i])
+		&& !isnan(sst[i]) && !isnan(anomaly[i])
 		&& (gradmag[i] > GRAD_LOW || glabels[i] == COMP_SPECKLE)
 		&& SST_LOW < sst[i] && sst[i] < SST_HIGH
-		&& DELTA_LOW < delta[i] && delta[i] < DELTA_HIGH){
+		&& ANOMALY_LOW < anomaly[i] && anomaly[i] < ANOMALY_HIGH){
 			q[FEAT_LAT] = SCALE_LAT(lat[i]);
 			q[FEAT_LON] = SCALE_LON(lon[i]);
 			q[FEAT_SST] = SCALE_SST(sst[i]);
-			q[FEAT_DELTA] = SCALE_DELTA(delta[i]);
+			q[FEAT_ANOM] = SCALE_ANOM(anomaly[i]);
 			idx.knnSearch(q, ind, dists, 1, sparam);
-			if(dists[0] < 30)
+			if(dists[0] < 5)
 				glabels[i] = glabels[indices[ind[0]]];
 		}
 	}
@@ -625,8 +630,8 @@ SAVENC(lut);
 SAVENC(glabels);
 
 	glabels_nn = glabels.clone();
-	nnlabel(feat, lat, lon, sst, delta, easyclouds, gradmag, glabels_nn);
-savenc("glabels_nn.nc", glabels);
+	nnlabel(feat, lat, lon, sst, anomaly, easyclouds, gradmag, glabels_nn);
+SAVENC(glabels_nn);
 	
 	thermal_fronts(lam2, gradmag, stdf, ncc, glabels, glabels_nn, easyclouds, fronts);
 SAVENC(fronts);

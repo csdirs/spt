@@ -31,7 +31,7 @@ using namespace cv;
 #define EDGE_THRESH 1
 #define STD_THRESH 0.5
 
-#define TQ_STEP 3
+#define TQ_STEP 1
 #define DQ_STEP 0.5
 #define OQ_STEP 0.5
 #define AQ_STEP 1
