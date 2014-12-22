@@ -562,15 +562,59 @@ SAVENC(_dilc);
 	}
 }
 
+void
+front_sides(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
+	double alpha, Mat &sides)
+{
+	int y, x, k, lefty, leftx, righty, rightx;
+	uchar *fronts;
+	float *dy, *dx, *gradmag;
+	double dy1, dx1;
+	
+	CHECKMAT(_fronts, CV_8UC1);
+	CHECKMAT(_dy, CV_32FC1);
+	CHECKMAT(_dx, CV_32FC1);
+	CHECKMAT(_gradmag, CV_32FC1);
+	fronts = _fronts.data;
+	dy = (float*)_dy.data;
+	dx = (float*)_dx.data;
+	gradmag = (float*)_gradmag.data;
+	
+	sides.create(_fronts.size(), CV_8SC1);
+	sides = Scalar(-1);
+	
+	k = 0;
+	for(y = 0; y < _fronts.rows; y++){
+		for(x = 0; x < _fronts.cols; x++){
+			if(fronts[k]){
+				// normalize vector (dy, dx)
+				dy1 = round(alpha * dy[k]/gradmag[k]);
+				dx1 = round(alpha * dx[k]/gradmag[k]);
+				
+				// compute indices of left and right sides
+				lefty = y + dx1;
+				leftx = x + dy1;
+				righty = y - dx1;
+				rightx = x - dy1;
+				
+				sides.at<schar>(lefty, leftx) = 0;
+				sides.at<schar>(y, x) = 1;
+				sides.at<schar>(righty, rightx) = 2;
+			}
+			k++;
+		}
+	}
+}
+
 int
 main(int argc, char **argv)
 {
 	Mat sst, cmc, anomaly, lat, lon, m14, m15, m16,
 		elem, sstdil, sstero, rfilt, sstlap, medf, stdf, blurf,
 		m14gm, m15gm, m16gm,
-		acspo, gradmag, delta, omega, albedo, TQ, DQ, OQ, AQ,
+		acspo, dX, dY, gradmag, delta, omega, albedo, TQ, DQ, OQ, AQ,
 		lut, glabels, glabels_nn, feat, lam1, lam2,
-		easyclouds, easyfronts, fronts, global_lut;
+		easyclouds, easyfronts, fronts, sides, global_lut;
 	int ncid, n, ncc;
 	char *path, *outpath;
 	Resample *r;
@@ -608,7 +652,7 @@ SAVENC(albedo);
 	delta = m15 - m16;
 	omega = m14 - m15;
 	anomaly = sst - cmc;
-	gradientmag(sst, gradmag);
+	gradientmag(sst, dX, dY, gradmag);
 	localmax(gradmag, lam2, lam1, 1);
 SAVENC(delta);
 SAVENC(omega);
@@ -649,6 +693,9 @@ SAVENC(glabels_nn);
 	
 	thermal_fronts(lam2, gradmag, stdf, ncc, glabels, glabels_nn, easyclouds, fronts);
 SAVENC(fronts);
+
+	front_sides(fronts, dY, dX, gradmag, 5, sides);
+SAVENC(sides);
 
 	if(outpath){
 		logprintf("copying from %s to %s\n", path, outpath);

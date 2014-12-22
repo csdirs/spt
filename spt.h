@@ -110,7 +110,7 @@ void loadnpy(const char *filename, Mat &mat);
 // filters.cc
 void	laplacian(Mat &src, Mat &dst);
 void	nanblur(const Mat &src, Mat &dst, int ksize);
-void	gradientmag(const Mat &src, Mat &dst);
+void	gradientmag(const Mat &src, Mat &dX, Mat &dY, Mat &dst);
 void	localmax(const Mat &gradmag, Mat &high, Mat &low, int sigma);
 void	stdfilter(const Mat &src, Mat &dst, int ksize);
 

@@ -22,13 +22,12 @@ nanblur(const Mat &src, Mat &dst, int ksize)
 
 // Compute the gradient magnitude of image src into dst.
 void
-gradientmag(const Mat &src, Mat &dst)
+gradientmag(const Mat &src, Mat &dX, Mat &dY, Mat &dst)
 {
 	Mat h = (Mat_<double>(5,1) <<
 		0.036420, 0.248972, 0.429217, 0.248972, 0.036420);
 	Mat hp = (Mat_<double>(5,1) <<
 		0.108415, 0.280353, 0, -0.280353, -0.108415);
-	Mat dX, dY;
 
 	sepFilter2D(src, dX, -1, h, hp);
 	sepFilter2D(src, dY, -1, hp, h);
