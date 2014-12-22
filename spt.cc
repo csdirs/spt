@@ -16,9 +16,9 @@ enum {
 	NFEAT,
 };
 
-// savefilename returns a filename based on granule path path
-// with suffix sub.
+// Return a filename based on granule path path with suffix suf.
 // e.g. savefilename("/foo/bar/qux.nc", ".png") returns "qux.png"
+//
 char*
 savefilename(char *path, const char *suf)
 {
@@ -38,23 +38,28 @@ savefilename(char *path, const char *suf)
 	return estrdup(buf);
 }
 
-// Run connected component for t == tq and d == dq, and save the features
-// for the connected components in _feat.
-//	size -- size of image
-//	t -- quantized SST value
-//	d -- quantized delta value
-//	tq, dq -- quantized SST, delta
-//	sst, delta, lat, lon -- original SST, delta, latitude, longitude
-//	glab -- global label assigned to _labels for (t == tq && d == dq)
-//	glabels -- global labels (output)
-//	_feat -- features (output)
+// Run connected component for t == tq and a == aq, and save the features
+// for the connected components in _feat. Returns the number of connected
+// components labeled in _cclabels.
+//
+// size -- size of image
+// t -- quantized SST value
+// a -- quantized anomaly value
+// tq, aq -- quantized SST, anomaly
+// sst, delta, omega, anomaly -- original SST, delta, omega, anomaly images
+// lat, lon -- latitude, longitude images
+// lut -- lookup table
+// _cclabels -- label assigned to pixels where (t == tq && d == dq) (output)
+// _feat -- features corresponding to _cclabels (output)
+//
 int
 quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
 	const float *sst, const float *delta, const float *omega, const float *anomaly,
 	const float *lat, const float *lon,
-	Mat &lut, Mat &_cclabels, Mat &_feat)
+	const Mat &lut, Mat &_cclabels, Mat &_feat)
 {
-	Mat _mask, stats, centoids, _ccrename, _count, _avglat, _avgsst, _avgdelta, _avgomega, _avganom;
+	Mat _mask, stats, centoids, _ccrename, _count,
+		_avglat, _avgsst, _avgdelta, _avgomega, _avganom;
 	double *avglat, *avgsst, *avgdelta, *avgomega, *avganom;
 	float *feat_lat, *feat_lon, *feat_sst, *feat_anom;
 	int i, ncc, lab, newlab, *cclabels, *ccrename, *count;
@@ -69,7 +74,6 @@ quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
 	ncc = connectedComponentsWithStats(_mask, _cclabels, stats, centoids, 8, CV_32S);
 	if(ncc <= 1)
 		return 0;
-//printf("# t=%2d, d=%2d, ncc=%d\n", t+1, d+1, ncc);
 
 	_ccrename.create(ncc, 1, CV_32SC1);
 	cclabels = (int*)_cclabels.data;
@@ -134,7 +138,7 @@ quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
 
 	// query LUT, remove components that are cloud and rename labels to be contiguous.
 	if(0){
-		CV_Assert(lut.type() == CV_8SC1 && lut.isContinuous());
+		CHECKMAT(lut, CV_8SC1);
 		memset(ccrename, 0, sizeof(*ccrename)*ncc);
 		newlab = 0;
 		for(lab = 0; lab < ncc; lab++){
@@ -174,31 +178,33 @@ quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
 	return ncc;
 }
 
-// Cluster and find features.
+// Cluster and find features. Returns the number of clusters labeled in _glabels.
+//
 // TQ, DQ -- quantized SST and delta images
-// _lat, _lon, _sst, _delta -- latitude, longitude, SST, delta images
+// _lat, _lon -- latitude, longitude images 
+// _sst, _delta, _omega, _anomaly -- SST, delta, omega, anomaly images
 // lut -- lookup table
 // _glabels -- global labels (output)
 // _feat -- features (output)
 //
-// returns the number of clusters in _glabels.
-// 
 int
 quantized_features(const Mat &TQ, const Mat &AQ, const Mat &_lat, const Mat &_lon,
-	const Mat &_sst, const Mat &_delta, Mat &_omega, Mat &_anomaly, Mat &lut, Mat &_glabels, Mat &_feat)
+	const Mat &_sst, const Mat &_delta, const Mat &_omega, const Mat &_anomaly,
+	const Mat &lut, Mat &_glabels, Mat &_feat)
 {
 	int i, glab, *glabels;
 	float *lat, *lon, *sst, *delta, *omega, *anomaly, *feat;
 	short *tq, *aq;
 	
-	CV_Assert(TQ.type() == CV_16SC1);
-	CV_Assert(AQ.type() == CV_16SC1);
-	CV_Assert(_lat.type() == CV_32FC1);
-	CV_Assert(_lon.type() == CV_32FC1);
-	CV_Assert(_sst.type() == CV_32FC1);
-	CV_Assert(_delta.type() == CV_32FC1);
-	CV_Assert(_omega.type() == CV_32FC1);
-	CV_Assert(_anomaly.type() == CV_32FC1);
+	CHECKMAT(TQ, CV_16SC1);
+	CHECKMAT(AQ, CV_16SC1);
+	CHECKMAT(_lat, CV_32FC1);
+	CHECKMAT(_lon, CV_32FC1);
+	CHECKMAT(_sst, CV_32FC1);
+	CHECKMAT(_delta, CV_32FC1);
+	CHECKMAT(_omega, CV_32FC1);
+	CHECKMAT(_anomaly, CV_32FC1);
+	CHECKMAT(lut, CV_8SC1);
 	
 	_glabels.create(_sst.size(), CV_32SC1);
 	_feat.create(NFEAT, _sst.total(), CV_32FC1);
@@ -229,7 +235,7 @@ quantized_features(const Mat &TQ, const Mat &AQ, const Mat &_lat, const Mat &_lo
 			
 			ncc = quantized_features_td(_sst.size(), t, a, tq, aq,
 				sst, delta, omega, anomaly, lat, lon, lut, _cclabels, _feat);
-			CV_Assert(_cclabels.type() == CV_32SC1 && _cclabels.isContinuous());
+			CHECKMAT(_cclabels, CV_32SC1);
 			cclabels = (int*)_cclabels.data;
 			
 			#pragma omp critical
@@ -251,17 +257,18 @@ quantized_features(const Mat &TQ, const Mat &AQ, const Mat &_lat, const Mat &_lo
 
 // Remove features from _feat that are not on the border of clusters defined
 // by the clustering labels in _glabels.
+//
 void
-remove_inner_feats(Mat &_feat, Mat &_glabels)
+remove_inner_feats(Mat &_feat, const Mat &_glabels)
 {
 	int i, k;
 	Mat elem, _labero;
 	uchar *labero;
 	float *feat, *vs;
 	
-	CV_Assert(_feat.type() == CV_32FC1 && _feat.isContinuous()
-		&& _feat.cols == NFEAT);
-	CV_Assert(_glabels.type() == CV_32SC1 && _glabels.isContinuous());
+	CHECKMAT(_feat, CV_32FC1);
+	CV_Assert(_feat.cols == NFEAT);
+	CHECKMAT(_glabels, CV_32SC1);
 	
 	if(DEBUG){
 		k = 0;
@@ -278,7 +285,7 @@ remove_inner_feats(Mat &_feat, Mat &_glabels)
 	elem = getStructuringElement(MORPH_RECT, Size(3, 3));
 	erode(_glabels >= 0, _labero, elem);
 	
-	CV_Assert(_labero.type() == CV_8UC1 && _labero.isContinuous());
+	CHECKMAT(_labero, CV_8UC1);
 	
 	// remove features if the pixel is in the eroded mask
 	labero = _labero.data;
@@ -293,13 +300,16 @@ remove_inner_feats(Mat &_feat, Mat &_glabels)
 }
 
 // Update labels by nearest label training.
+//
 // _feat -- features (rows containing NaNs are removed)
-// _lat, _lon, _sst, _delta -- latitude, longitude, SST, delta images
+// _lat, _lon, _sst, _anomaly -- latitude, longitude, SST, anomaly images
 // _easyclouds -- easyclouds mask
 // _gradmag -- gradient magnitude
-// _glabels -- global labels (output)
+// _glabels -- global labels (input & output)
+//
 static void
-nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat &_anomaly,
+nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon,
+	const Mat &_sst, const Mat &_anomaly,
 	const Mat &_easyclouds, const Mat &_gradmag, Mat &_glabels)
 {
 	int i, k, *indices, *glabels;
@@ -310,15 +320,15 @@ nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon, const Mat &_sst, const Mat
 	flann::SearchParams sparam(4);
 	uchar *easyclouds, *labdil;
 	
-	CV_Assert(_feat.type() == CV_32FC1 && _feat.isContinuous()
-		&& _feat.cols == NFEAT);
-	CV_Assert(_lat.type() == CV_32FC1 && _lat.isContinuous());
-	CV_Assert(_lon.type() == CV_32FC1 && _lon.isContinuous());
-	CV_Assert(_sst.type() == CV_32FC1 && _sst.isContinuous());
-	CV_Assert(_anomaly.type() == CV_32FC1 && _anomaly.isContinuous());
-	CV_Assert(_glabels.type() == CV_32SC1 && _glabels.isContinuous());
-	CV_Assert(_easyclouds.type() == CV_8UC1 && _easyclouds.isContinuous());
-	CV_Assert(_gradmag.type() == CV_32FC1 && _gradmag.isContinuous());
+	CHECKMAT(_feat, CV_32FC1);
+	CV_Assert(_feat.cols == NFEAT);
+	CHECKMAT(_lat, CV_32FC1);
+	CHECKMAT(_lon, CV_32FC1);
+	CHECKMAT(_sst, CV_32FC1);
+	CHECKMAT(_anomaly, CV_32FC1);
+	CHECKMAT(_easyclouds, CV_8UC1);
+	CHECKMAT(_gradmag, CV_32FC1);
+	CHECKMAT(_glabels, CV_32SC1);
 
 	remove_inner_feats(_feat, _glabels);
 	
@@ -346,7 +356,7 @@ logprintf("reduced number of features: %d\n", k);
 	
 	// dilate all the clusters
 	dilate(_glabels >= 0, _labdil, getStructuringElement(MORPH_RECT, Size(21, 21)));
-	CV_Assert(_labdil.type() == CV_8UC1 && _labdil.isContinuous());
+	CHECKMAT(_labdil, CV_8UC1);
 	
 	lat = (float*)_lat.data;
 	lon = (float*)_lon.data;
@@ -380,6 +390,7 @@ logprintf("done searching nearest neighbors\n");
 }
 
 // Copy a file named src into file named dst.
+//
 void
 copyfile(const char *src, const char *dst)
 {
@@ -415,12 +426,13 @@ copyfile(const char *src, const char *dst)
 
 // TODO: unsort _acspo and _glabels
 // TODO: save cloud mask on least 2 significant bits
+//
 void
 write_spt_mask(int ncid, Mat &spt)
 {
 	int n, varid, dimids[2];
 	
-	CV_Assert(spt.type() == CV_8UC1 && spt.isContinuous());
+	CHECKMAT(spt, CV_8UC1);
 	
 	n = nc_inq_varid(ncid, SPT_MASK_NAME, &varid);
 	if(n != NC_NOERR){
@@ -450,8 +462,8 @@ compute_spt_mask(Mat &_acspo, Mat &_labels, Mat &_spt)
 	int i;
 	uchar *acspo, *labels, *spt, cm;
 	
-	CV_Assert(_acspo.type() == CV_8UC1 && _acspo.isContinuous());
-	CV_Assert(_labels.type() == CV_8SC1 && _acspo.isContinuous());
+	CHECKMAT(_acspo, CV_8UC1);
+	CHECKMAT(_labels, CV_8SC1);
 	
 	_spt.create(_acspo.size(), CV_8UC1);
 	
@@ -469,17 +481,8 @@ compute_spt_mask(Mat &_acspo, Mat &_labels, Mat &_spt)
 }
 
 
-// Compute thermal fronts.
-// 
-// lam2 -- local max
-// gradmag -- gradient magnitude
-// stdf -- stdfilter(sst - medianBlur(sst))
-// glabels -- cluster labels before nearest neighbor lookup
-// glabels_nn -- cluster labels after nearest neighbor lookup
-// easyclouds -- easy clouds
-// fronts -- thermal fronts (output)
+// Compute thermal fronts. Let:
 //
-// Let:
 //	f(x) = 1.0/(1+exp(100*(x+0.01)))
 //	g(x) = 1.0/(1+exp(-30*(x-0.15)))
 //	h(x) = 1.0/(1+exp(30*(x-0.15)))
@@ -490,9 +493,20 @@ compute_spt_mask(Mat &_acspo, Mat &_labels, Mat &_spt)
 //	- not in dilated easy clouds
 //	- over domain added by nearest neighbor search
 //	- prod1 > 0.5 || prod2 > 0.5
+//
+// lam2 -- local max
+// gradmag -- gradient magnitude
+// stdf -- stdfilter(sst - medianBlur(sst))
+// ncc -- number of connected components labeled in glabels
+// glabels -- cluster labels before nearest neighbor lookup
+// glabels_nn -- cluster labels after nearest neighbor lookup
+// easyclouds -- easy clouds
+// fronts -- thermal fronts (output)
+//
 void
-thermal_fronts(Mat &_lam2, Mat &_gradmag, Mat &_stdf,
-	int ncc, Mat &_glabels, Mat &_glabels_nn, Mat &easyclouds, Mat &_fronts)
+thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
+	int ncc, const Mat &_glabels, const Mat &_glabels_nn,
+	const Mat &easyclouds, Mat &_fronts)
 {
 	Mat _dilc;
 	float *lam2, *gradmag, *stdf;
