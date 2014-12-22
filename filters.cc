@@ -30,7 +30,8 @@ gradientmag(const Mat &src, Mat &dX, Mat &dY, Mat &dst)
 		0.108415, 0.280353, 0, -0.280353, -0.108415);
 
 	sepFilter2D(src, dX, -1, h, hp);
-	sepFilter2D(src, dY, -1, hp, h);
+	// We negate h here to fix the sign of Dy
+	sepFilter2D(src, dY, -1, hp, -h);
 	sqrt(dX.mul(dX) + dY.mul(dY), dst);
 }
 

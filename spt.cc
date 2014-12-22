@@ -16,6 +16,12 @@ enum {
 	NFEAT,
 };
 
+typedef struct FrontStats FrontStats;
+struct FrontStats {
+	int nleft, nright;	// number of valid labels on the left/right
+	float leftmag, rightmag, mag;	// gradient magnitude
+};
+
 // Return a filename based on granule path path with suffix suf.
 // e.g. savefilename("/foo/bar/qux.nc", ".png") returns "qux.png"
 //
@@ -38,6 +44,38 @@ savefilename(char *path, const char *suf)
 	return estrdup(buf);
 }
 
+int
+connectedComponentsWithLimit(const Mat &mask, int connectivity, int lim, Mat &_cclabels)
+{
+	Mat stats, centoids, _ccrename;
+	int i, ncc, lab, newlab, *cclabels, *ccrename;
+	
+	ncc = connectedComponentsWithStats(mask, _cclabels, stats, centoids, connectivity, CV_32S);
+	if(ncc <= 1)
+		return 0;
+	
+	CHECKMAT(_cclabels, CV_32SC1);
+	_ccrename.create(ncc, 1, CV_32SC1);
+	cclabels = (int*)_cclabels.data;
+	ccrename = (int*)_ccrename.data;
+	
+	// Remove small connected components and rename labels to be contiguous.
+	// Also, set background label 0 (where mask is 0) to -1.
+	newlab = 0;
+	ccrename[0] = COMP_INVALID;
+	for(lab = 1; lab < ncc; lab++){
+		if(stats.at<int>(lab, CC_STAT_AREA) >= lim)
+			ccrename[lab] = newlab++;
+		else
+			ccrename[lab] = COMP_SPECKLE;
+	}
+	ncc = newlab;
+	for(i = 0; i < (int)mask.total(); i++)
+		cclabels[i] = ccrename[cclabels[i]];
+
+	return ncc;
+}
+
 // Run connected component for t == tq and a == aq, and save the features
 // for the connected components in _feat. Returns the number of connected
 // components labeled in _cclabels.
@@ -58,8 +96,7 @@ quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
 	const float *lat, const float *lon,
 	const Mat &lut, Mat &_cclabels, Mat &_feat)
 {
-	Mat _mask, stats, centoids, _ccrename, _count,
-		_avglat, _avgsst, _avgdelta, _avgomega, _avganom;
+	Mat _mask, _ccrename, _count, _avglat, _avgsst, _avgdelta, _avgomega, _avganom;
 	double *avglat, *avgsst, *avgdelta, *avgomega, *avganom;
 	float *feat_lat, *feat_lon, *feat_sst, *feat_anom;
 	int i, ncc, lab, newlab, *cclabels, *ccrename, *count;
@@ -71,31 +108,12 @@ quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
 	for(i = 0; i < (int)_mask.total(); i++)
 		mask[i] = tq[i] == t && aq[i] == a ? 255 : 0;
 	
-	ncc = connectedComponentsWithStats(_mask, _cclabels, stats, centoids, 8, CV_32S);
-	if(ncc <= 1)
+	ncc = connectedComponentsWithLimit(_mask, 4, 200, _cclabels);
+	if(ncc <= 0)
 		return 0;
-
-	_ccrename.create(ncc, 1, CV_32SC1);
+	
+	CHECKMAT(_cclabels, CV_32SC1);
 	cclabels = (int*)_cclabels.data;
-	ccrename = (int*)_ccrename.data;
-	
-	// Remove small connected components and rename labels to be contiguous.
-	// Also, set background label 0 (where mask is 0) to -1.
-	newlab = 0;
-	ccrename[0] = COMP_INVALID;
-	for(lab = 1; lab < ncc; lab++){
-		if(stats.at<int>(lab, CC_STAT_AREA) >= 200)
-			ccrename[lab] = newlab++;
-		else
-			ccrename[lab] = COMP_SPECKLE;
-	}
-	ncc = newlab;
-	for(i = 0; i < size.area(); i++)
-		cclabels[i] = ccrename[cclabels[i]];
-	
-	// remove these since they are wrong after the labels renaming
-	stats.release();
-	centoids.release();
 	
 	_count.create(ncc, 1, CV_32SC1);
 	_avglat.create(ncc, 1, CV_64FC1);
@@ -139,6 +157,8 @@ quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
 	// query LUT, remove components that are cloud and rename labels to be contiguous.
 	if(0){
 		CHECKMAT(lut, CV_8SC1);
+		_ccrename.create(ncc, 1, CV_32SC1);
+		ccrename = (int*)_ccrename.data;
 		memset(ccrename, 0, sizeof(*ccrename)*ncc);
 		newlab = 0;
 		for(lab = 0; lab < ncc; lab++){
@@ -593,9 +613,9 @@ front_sides(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 				
 				// compute indices of left and right sides
 				lefty = y + dx1;
-				leftx = x + dy1;
+				leftx = x - dy1;
 				righty = y - dx1;
-				rightx = x - dy1;
+				rightx = x + dy1;
 				
 				sides.at<schar>(lefty, leftx) = 0;
 				sides.at<schar>(y, x) = 1;
