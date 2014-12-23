@@ -21,9 +21,6 @@ enum {
 	FSTAT_SIZE,	// front size in pixels
 	FSTAT_LSIZE,	// left side size
 	FSTAT_RSIZE,	// right side size
-	FSTAT_MAG,	// average gradient magnitude of front
-	FSTAT_LMAG,	// average gradient magnitude of left side
-	FSTAT_RMAG,	// average gradient magnitude of right side
 	NFSTAT,
 };
 
@@ -589,22 +586,26 @@ SAVENC(_dilc);
 
 int
 front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
-	const Mat &_glabels, double alpha, Mat &_sides, Mat &_cclabels, Mat &_fstats)
+	const Mat &_glabels, const Mat &_acspo, double alpha,
+	Mat &_sides, Mat &_cclabels, Mat &_fstats)
 {
-	int i, ncc, y, x, k, left, right, *cclabels, *glabels;
+	int ncc, y, x, k, left, right, *cclabels, *glabels;
 	schar *sides;
 	float *dy, *dx, *gradmag;
 	double dy1, dx1, *fstats, *fs;
+	uchar *acspo;
 	
 	CHECKMAT(_fronts, CV_8UC1);
 	CHECKMAT(_dy, CV_32FC1);
 	CHECKMAT(_dx, CV_32FC1);
 	CHECKMAT(_gradmag, CV_32FC1);
 	CHECKMAT(_glabels, CV_32SC1);
+	CHECKMAT(_acspo, CV_8UC1);
 	dy = (float*)_dy.data;
 	dx = (float*)_dx.data;
 	gradmag = (float*)_gradmag.data;
 	glabels = (int*)_glabels.data;
+	acspo = (uchar*)_acspo.data;
 	
 	_sides.create(_fronts.size(), CV_8SC1);
 	_sides = Scalar(-1);
@@ -640,18 +641,11 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 			
 			// compute statistics of front
 			fs = &fstats[NFSTAT * cclabels[k]];
-			if(!isnan(gradmag[k])){
-				fs[FSTAT_SIZE]++;
-				fs[FSTAT_MAG] += gradmag[k];
-			}
-			if(glabels[left] >= 0 && !isnan(gradmag[left])){
+			fs[FSTAT_SIZE]++;
+			if(glabels[left] >= 0 || (acspo[left]&MaskLand) != 0)
 				fs[FSTAT_LSIZE]++;
-				fs[FSTAT_LMAG] += gradmag[left];
-			}
-			if(glabels[right] >= 0 && !isnan(gradmag[right])){
+			if(glabels[right] >= 0 || (acspo[right]&MaskLand) != 0)
 				fs[FSTAT_RSIZE]++;
-				fs[FSTAT_RMAG] += gradmag[right];
-			}
 			
 			// label the front, and its left and right sides
 			sides[k] = 0;
@@ -661,15 +655,6 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 			k++;
 		}
 	}
-	
-	// compute average gradient magnitude
-	for(i = 0; i < ncc; i++){
-		fs = &fstats[NFSTAT * i];
-		fs[FSTAT_MAG] /= fs[FSTAT_SIZE];
-		fs[FSTAT_LMAG] /= fs[FSTAT_LSIZE];
-		fs[FSTAT_RMAG] /= fs[FSTAT_RSIZE];
-	}
-	
 	return ncc;
 }
 
@@ -761,7 +746,7 @@ SAVENC(glabels_nn);
 	thermal_fronts(lam2, gradmag, stdf, ncc, glabels, glabels_nn, easyclouds, fronts);
 SAVENC(fronts);
 
-	front_stats(fronts, dY, dX, gradmag, glabels_nn, 5, sides, flabels, fstats);
+	front_stats(fronts, dY, dX, gradmag, glabels_nn, acspo, 5, sides, flabels, fstats);
 SAVENC(sides);
 SAVENC(flabels);
 SAVENC(fstats);
