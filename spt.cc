@@ -21,6 +21,7 @@ enum {
 	FSTAT_SIZE,	// front size in pixels
 	FSTAT_LSIZE,	// left side size
 	FSTAT_RSIZE,	// right side size
+	FSTAT_WANT,	// do we want this front?
 	NFSTAT,
 };
 
@@ -589,10 +590,10 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 	const Mat &_glabels, const Mat &_acspo, double alpha,
 	Mat &_sides, Mat &_cclabels, Mat &_fstats)
 {
-	int ncc, y, x, k, left, right, *cclabels, *glabels;
+	int i, ncc, y, x, k, left, right, *cclabels, *glabels;
 	schar *sides;
 	float *dy, *dx, *gradmag;
-	double dy1, dx1, *fstats, *fs;
+	double dy1, dx1, *fstats, *fs, t;
 	uchar *acspo;
 	
 	CHECKMAT(_fronts, CV_8UC1);
@@ -654,6 +655,21 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 
 			k++;
 		}
+	}
+	
+	for(i = 0; i < ncc; i++){
+		fs = &fstats[NFSTAT * i];
+		t = 0.7*fs[FSTAT_SIZE];
+		fs[FSTAT_WANT] = fs[FSTAT_LSIZE] > t && fs[FSTAT_RSIZE] > t;
+	}
+	
+	for(k = 0; k < (int)_fronts.total(); k++){
+		if(cclabels[k] < 0)
+			continue;
+		
+		fs = &fstats[NFSTAT * cclabels[k]];
+		if(fs[FSTAT_WANT])
+			sides[k] = 3;
 	}
 	return ncc;
 }
