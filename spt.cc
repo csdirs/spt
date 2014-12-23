@@ -589,9 +589,9 @@ SAVENC(_dilc);
 
 int
 front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
-	double alpha, Mat &_sides, Mat &_cclabels, Mat &_fstats)
+	const Mat &_glabels, double alpha, Mat &_sides, Mat &_cclabels, Mat &_fstats)
 {
-	int i, ncc, y, x, k, left, right, *cclabels;
+	int i, ncc, y, x, k, left, right, *cclabels, *glabels;
 	schar *sides;
 	float *dy, *dx, *gradmag;
 	double dy1, dx1, *fstats, *fs;
@@ -600,9 +600,11 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 	CHECKMAT(_dy, CV_32FC1);
 	CHECKMAT(_dx, CV_32FC1);
 	CHECKMAT(_gradmag, CV_32FC1);
+	CHECKMAT(_glabels, CV_32SC1);
 	dy = (float*)_dy.data;
 	dx = (float*)_dx.data;
 	gradmag = (float*)_gradmag.data;
+	glabels = (int*)_glabels.data;
 	
 	_sides.create(_fronts.size(), CV_8SC1);
 	_sides = Scalar(-1);
@@ -633,8 +635,8 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 			dx1 = round(alpha * dx[k]/gradmag[k]);
 			
 			// compute indices of left and right sides
-			left = k - dy1*_fronts.cols + dx1;
-			right = k + dy1*_fronts.cols - dx1;
+			left = k + dx1*_fronts.cols - dy1;
+			right = k - dx1*_fronts.cols + dy1;
 			
 			// compute statistics of front
 			fs = &fstats[NFSTAT * cclabels[k]];
@@ -642,11 +644,11 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 				fs[FSTAT_SIZE]++;
 				fs[FSTAT_MAG] += gradmag[k];
 			}
-			if(cclabels[left] >= 0 && !isnan(gradmag[left])){
+			if(glabels[left] >= 0 && !isnan(gradmag[left])){
 				fs[FSTAT_LSIZE]++;
 				fs[FSTAT_LMAG] += gradmag[left];
 			}
-			if(cclabels[right] >= 0 && !isnan(gradmag[right])){
+			if(glabels[right] >= 0 && !isnan(gradmag[right])){
 				fs[FSTAT_RSIZE]++;
 				fs[FSTAT_RMAG] += gradmag[right];
 			}
@@ -759,7 +761,7 @@ SAVENC(glabels_nn);
 	thermal_fronts(lam2, gradmag, stdf, ncc, glabels, glabels_nn, easyclouds, fronts);
 SAVENC(fronts);
 
-	front_stats(fronts, dY, dX, gradmag, 5, sides, flabels, fstats);
+	front_stats(fronts, dY, dX, gradmag, glabels_nn, 5, sides, flabels, fstats);
 SAVENC(sides);
 SAVENC(flabels);
 SAVENC(fstats);
