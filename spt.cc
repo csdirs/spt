@@ -16,10 +16,15 @@ enum {
 	NFEAT,
 };
 
-typedef struct FrontStats FrontStats;
-struct FrontStats {
-	int nleft, nright;	// number of valid labels on the left/right
-	float leftmag, rightmag, mag;	// gradient magnitude
+// front statistics
+enum {
+	FSTAT_SIZE,	// front size in pixels
+	FSTAT_LSIZE,	// left side size
+	FSTAT_RSIZE,	// right side size
+	FSTAT_MAG,	// average gradient magnitude of front
+	FSTAT_LMAG,	// average gradient magnitude of left side
+	FSTAT_RMAG,	// average gradient magnitude of right side
+	NFSTAT,
 };
 
 // Return a filename based on granule path path with suffix suf.
@@ -582,48 +587,88 @@ SAVENC(_dilc);
 	}
 }
 
-void
-front_sides(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
-	double alpha, Mat &sides)
+int
+front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
+	double alpha, Mat &_sides, Mat &_cclabels, Mat &_fstats)
 {
-	int y, x, k, lefty, leftx, righty, rightx;
-	uchar *fronts;
+	int i, ncc, y, x, k, left, right, *cclabels;
+	schar *sides;
 	float *dy, *dx, *gradmag;
-	double dy1, dx1;
+	double dy1, dx1, *fstats, *fs;
 	
 	CHECKMAT(_fronts, CV_8UC1);
 	CHECKMAT(_dy, CV_32FC1);
 	CHECKMAT(_dx, CV_32FC1);
 	CHECKMAT(_gradmag, CV_32FC1);
-	fronts = _fronts.data;
 	dy = (float*)_dy.data;
 	dx = (float*)_dx.data;
 	gradmag = (float*)_gradmag.data;
 	
-	sides.create(_fronts.size(), CV_8SC1);
-	sides = Scalar(-1);
+	_sides.create(_fronts.size(), CV_8SC1);
+	_sides = Scalar(-1);
+	sides = (schar*)_sides.data;
+	
+	// run connected components on fronts, eliminating small fronts
+	ncc = connectedComponentsWithLimit(_fronts, 8, 10, _cclabels);
+	if(ncc <= 0)
+		return 0;
+	CHECKMAT(_cclabels, CV_32SC1);
+	cclabels = (int*)_cclabels.data;
+	logprintf("ncc = %d\n", ncc);
+	
+	_fstats.create(ncc, NFSTAT, CV_64FC1);
+	_fstats = Scalar(0);
+	fstats = (double*)_fstats.data;
 	
 	k = 0;
 	for(y = 0; y < _fronts.rows; y++){
 		for(x = 0; x < _fronts.cols; x++){
-			if(fronts[k]){
-				// normalize vector (dy, dx)
-				dy1 = round(alpha * dy[k]/gradmag[k]);
-				dx1 = round(alpha * dx[k]/gradmag[k]);
-				
-				// compute indices of left and right sides
-				lefty = y + dx1;
-				leftx = x - dy1;
-				righty = y - dx1;
-				rightx = x + dy1;
-				
-				sides.at<schar>(lefty, leftx) = 0;
-				sides.at<schar>(y, x) = 1;
-				sides.at<schar>(righty, rightx) = 2;
+			if(cclabels[k] < 0){
+				k++;
+				continue;
 			}
+			
+			// normalize vector (dy, dx) and multiply it by alpha
+			dy1 = round(alpha * dy[k]/gradmag[k]);
+			dx1 = round(alpha * dx[k]/gradmag[k]);
+			
+			// compute indices of left and right sides
+			left = k - dy1*_fronts.cols + dx1;
+			right = k + dy1*_fronts.cols - dx1;
+			
+			// compute statistics of front
+			fs = &fstats[NFSTAT * cclabels[k]];
+			if(!isnan(gradmag[k])){
+				fs[FSTAT_SIZE]++;
+				fs[FSTAT_MAG] += gradmag[k];
+			}
+			if(cclabels[left] >= 0 && !isnan(gradmag[left])){
+				fs[FSTAT_LSIZE]++;
+				fs[FSTAT_LMAG] += gradmag[left];
+			}
+			if(cclabels[right] >= 0 && !isnan(gradmag[right])){
+				fs[FSTAT_RSIZE]++;
+				fs[FSTAT_RMAG] += gradmag[right];
+			}
+			
+			// label the front, and its left and right sides
+			sides[k] = 0;
+			sides[left] = 1;
+			sides[right] = 2;
+
 			k++;
 		}
 	}
+	
+	// compute average gradient magnitude
+	for(i = 0; i < ncc; i++){
+		fs = &fstats[NFSTAT * i];
+		fs[FSTAT_MAG] /= fs[FSTAT_SIZE];
+		fs[FSTAT_LMAG] /= fs[FSTAT_LSIZE];
+		fs[FSTAT_RMAG] /= fs[FSTAT_RSIZE];
+	}
+	
+	return ncc;
 }
 
 int
@@ -634,7 +679,7 @@ main(int argc, char **argv)
 		m14gm, m15gm, m16gm,
 		acspo, dX, dY, gradmag, delta, omega, albedo, TQ, DQ, OQ, AQ,
 		lut, glabels, glabels_nn, feat, lam1, lam2,
-		easyclouds, easyfronts, fronts, sides, global_lut;
+		easyclouds, easyfronts, fronts, flabels, fstats, sides, global_lut;
 	int ncid, n, ncc;
 	char *path, *outpath;
 	Resample *r;
@@ -714,8 +759,10 @@ SAVENC(glabels_nn);
 	thermal_fronts(lam2, gradmag, stdf, ncc, glabels, glabels_nn, easyclouds, fronts);
 SAVENC(fronts);
 
-	front_sides(fronts, dY, dX, gradmag, 5, sides);
+	front_stats(fronts, dY, dX, gradmag, 5, sides, flabels, fstats);
 SAVENC(sides);
+SAVENC(flabels);
+SAVENC(fstats);
 
 	if(outpath){
 		logprintf("copying from %s to %s\n", path, outpath);
