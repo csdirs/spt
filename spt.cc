@@ -503,7 +503,6 @@ compute_spt_mask(Mat &_acspo, Mat &_labels, Mat &_spt)
 	}
 }
 
-
 // Compute thermal fronts. Let:
 //
 //	f(x) = 1.0/(1+exp(100*(x+0.01)))
@@ -673,6 +672,25 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 	}
 	return ncc;
 }
+
+/*
+TODO:
+aggsst = np.copy(sst)
+for i in xrange(glabels_nn.max()+1):
+    mask = np.where(glabels_nn == i)
+    aggsst[mask] = np.nanmean(sst[mask])
+
+dX, dY = gradient(aggsst)
+agggradmag = np.sqrt(dX**2 + dY**2)
+aggstdf = stdfilt(aggsst - median_filter(aggsst, 5).astype('f8'), 7)
+aggfronts = (agggradmag>0.3) & (glabels_nn>=0)
+*/
+
+// TODO:
+// Li = cluster i pixels overlapping with one side
+// L = number of pixels on one side
+// if Li/L > 0.3, restore n pixels from cluster overlapping with confidently
+// cloudy acspo if n > 100
 
 int
 main(int argc, char **argv)
