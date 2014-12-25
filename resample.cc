@@ -336,14 +336,14 @@ resample_init(Resample *r, const Mat &lat, const Mat &acspo)
 // Resample VIIRS swatch image img with corresponding
 // latitude image lat, and ACSPO mask acspo.
 void
-resample_float32(const Resample *r, const Mat &src, Mat &dst)
+resample_float32(const Resample *r, const Mat &src, Mat &dst, bool sort)
 {
 	if(r == NULL)
 		eprintf("Nil Resample\n");
 	
 	CV_Assert(src.type() == CV_32FC1);
 
-	dst = resample_sort(r->sind, src);
+	dst = sort ? resample_sort(r->sind, src) : src;
 //benchmark_avgfilter3(src, r->sind, 100);
 	dst = avgfilter3(dst, r->sind);
 //dumpmat("avgfilter3_new.bin", dst);

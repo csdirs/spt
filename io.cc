@@ -197,6 +197,6 @@ readvar_resampled(int ncid, Resample *r, const char *name)
 	}
 	
 	logprintf("resampling %s...\n", name);
-	resample_float32(r, img, img);
+	resample_float32(r, img, img, true);
 	return img;
 }

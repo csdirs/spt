@@ -45,7 +45,7 @@ main(int argc, char **argv)
 	readvar(ncid, "sst_regression", sst);
 	
 	resample_init(&r, lat, acspo);
-	resample_float32(&r, sst, sst);
+	resample_float32(&r, sst, sst, true);
 	slon = resample_sort(r.sind, slon);
 	
 	writevar(ncid, "acspo_mask", r.sacspo);

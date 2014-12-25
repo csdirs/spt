@@ -83,7 +83,7 @@ struct Resample {
 Mat resample_unsort(const Mat &sind, const Mat &img);
 Mat resample_sort(const Mat &sind, const Mat &img);
 void resample_init(Resample *r, const Mat &lat, const Mat &acspo);
-void resample_float32(const Resample *r, const Mat &src, Mat &dst);
+void resample_float32(const Resample *r, const Mat &src, Mat &dst, bool sort);
 
 // utils.cc
 void eprintf(const char *fmt, ...);

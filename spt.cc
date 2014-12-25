@@ -701,29 +701,83 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 	return nfront;
 }
 
+// Resample ACSPO cloud mask to fill in deletion zones.
+//
+// _acspo -- ACSPO mask already sorted by latitude
+// _acloud -- ACSPO cloud mask represented using float32
+//	where NAN is land/ice/etc., 1 is "confidently cloudy", 0 is "clear sky",
+//	and number in (0, 1) is result of interpolation on deletion zones near
+//	cloud/clear sky boundary. (output)
+//
 void
-restore_clust(Mat &_acspo, Mat &_clust, Mat &_adjclust, Mat &_newcs)
+resample_acloud(Resample *r, Mat &_acspo, Mat &_acloud)
 {
-	Mat _labels, stats, centoids;
-	int i, *clust, *labels, nlab, n;
-	uchar *acspo, *adjclust, *newcs;
+	int i;
+	uchar *acspo;
+	float *acloud;
 	
 	CHECKMAT(_acspo, CV_8UC1);
+	_acloud.create(_acspo.size(), CV_32FC1);
+	acspo = _acspo.data;
+	acloud = (float*)_acloud.data;
+	
+	// Prepare ACSPO cloud mask for resampling.
+	// The resampling code only works with float32, and interpolates
+	// over NAN values.
+	for(i = 0; i < (int)_acspo.total(); i++){
+		switch(acspo[i]&MaskCloud){
+		default:
+			acloud[i] = 0;
+			break;
+		case MaskCloudInvalid:
+			acloud[i] = NAN;
+			break;
+		case MaskCloudSure:
+			acloud[i] = 1;
+			break;
+		}
+	}
+	resample_float32(r, _acloud, _acloud, false);
+}
+
+// Find new clear-sky pixels that needs to be restored.
+//
+// r -- resampling context
+// acspo -- ACSPO mask sorted by latitude
+// _clust -- clustering labels image
+// _adjclust -- for each cluster, indicates if it's adjacent to a thernal front
+// _newcs -- new clear-sky that needs to be restored (output)
+//
+void
+get_newcs(Resample *r, Mat &acspo, Mat &_clust, Mat &_adjclust, Mat &_newcs)
+{
+	Mat _labels, stats, centoids, _acloud;
+	int i, *clust, *labels, nlab, n;
+	uchar *adjclust, *newcs;
+	float *acloud;
+	
+	CHECKMAT(acspo, CV_8UC1);
 	CHECKMAT(_clust, CV_32SC1);
 	CHECKMAT(_adjclust, CV_8UC1);
-	acspo = _acspo.data;
 	clust = (int*)_clust.data;
 	adjclust = _adjclust.data;
 	
-	_newcs.create(_acspo.size(), CV_8UC1);
+	resample_acloud(r, acspo, _acloud);
+	CHECKMAT(_acloud, CV_32FC1);
+	SAVENC(_acloud);
+	acloud = (float*)_acloud.data;
+	
+	_newcs.create(acspo.size(), CV_8UC1);
 	_newcs = Scalar(0);
 	newcs = _newcs.data;
 	
 	// Add to new clear-sky mask if:
 	// - pixels belongs to a cluster adjacent to a front
 	// - ACSPO says it's confidently cloudy
-	for(i = 0; i < (int)_acspo.total(); i++){
-		if(clust[i] >= 0 && adjclust[clust[i]] && (acspo[i]&MaskCloud) == MaskCloudSure)
+	// We're using the resampled/interpolated ACSPO cloud mask (acloud)
+	// so that the deleted zones doesn't split clusters into smaller ones.
+	for(i = 0; i < (int)_newcs.total(); i++){
+		if(clust[i] >= 0 && adjclust[clust[i]] && !isnan(acloud[i]) && acloud[i] > 0)
 			newcs[i] = 255;
 	}
 	
@@ -855,7 +909,7 @@ SAVENC(flabels);
 SAVENC(fstats);
 SAVENC(adjclust);
 
-	restore_clust(acspo, glabels_nn, adjclust, newcs);
+	get_newcs(r, acspo, glabels_nn, adjclust, newcs);
 SAVENC(newcs);
 
 	if(outpath){
