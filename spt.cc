@@ -527,7 +527,7 @@ compute_spt_mask(Mat &_acspo, Mat &_labels, Mat &_spt)
 //
 void
 thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
-	int ncc, const Mat &_glabels, const Mat &_glabels_nn,
+	const Mat &_glabels, const Mat &_glabels_nn,
 	const Mat &easyclouds, Mat &_fronts)
 {
 	Mat _dilc;
@@ -586,25 +586,25 @@ SAVENC(_dilc);
 
 int
 front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
-	const Mat &_glabels, const Mat &_acspo, double alpha,
-	Mat &_sides, Mat &_cclabels, Mat &_fstats)
+	int nclust, const Mat &_clust, const Mat &_acspo, double alpha,
+	Mat &_sides, Mat &_cclabels, Mat &_fstats, Mat &_adjclust)
 {
-	int i, ncc, y, x, k, left, right, *cclabels, *glabels;
+	int i, j, *p, nfront, y, x, k, left, right, *cclabels, *clust;
 	schar *sides;
 	float *dy, *dx, *gradmag;
 	double dy1, dx1, *fstats, *fs, t;
-	uchar *acspo;
+	uchar *acspo, *adjclust;
 	
 	CHECKMAT(_fronts, CV_8UC1);
 	CHECKMAT(_dy, CV_32FC1);
 	CHECKMAT(_dx, CV_32FC1);
 	CHECKMAT(_gradmag, CV_32FC1);
-	CHECKMAT(_glabels, CV_32SC1);
+	CHECKMAT(_clust, CV_32SC1);
 	CHECKMAT(_acspo, CV_8UC1);
 	dy = (float*)_dy.data;
 	dx = (float*)_dx.data;
 	gradmag = (float*)_gradmag.data;
-	glabels = (int*)_glabels.data;
+	clust = (int*)_clust.data;
 	acspo = (uchar*)_acspo.data;
 	
 	_sides.create(_fronts.size(), CV_8SC1);
@@ -612,14 +612,18 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 	sides = (schar*)_sides.data;
 	
 	// run connected components on fronts, eliminating small fronts
-	ncc = connectedComponentsWithLimit(_fronts, 8, 10, _cclabels);
-	if(ncc <= 0)
+	nfront = connectedComponentsWithLimit(_fronts, 8, 10, _cclabels);
+	if(nfront <= 0)
 		return 0;
 	CHECKMAT(_cclabels, CV_32SC1);
 	cclabels = (int*)_cclabels.data;
-	logprintf("ncc = %d\n", ncc);
+	logprintf("nfront = %d\n", nfront);
 	
-	_fstats.create(ncc, NFSTAT, CV_64FC1);
+	int countsize[] = {nfront, nclust};
+	SparseMat leftcount(nelem(countsize), countsize, CV_32SC1);
+	SparseMat rightcount(nelem(countsize), countsize, CV_32SC1);
+
+	_fstats.create(nfront, NFSTAT, CV_64FC1);
 	_fstats = Scalar(0);
 	fstats = (double*)_fstats.data;
 	
@@ -642,24 +646,48 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 			// compute statistics of front
 			fs = &fstats[NFSTAT * cclabels[k]];
 			fs[FSTAT_SIZE]++;
-			if(glabels[left] >= 0 || (acspo[left]&MaskLand) != 0)
-				fs[FSTAT_LSIZE]++;
-			if(glabels[right] >= 0 || (acspo[right]&MaskLand) != 0)
-				fs[FSTAT_RSIZE]++;
-			
-			// label the front, and its left and right sides
 			sides[k] = 0;
-			sides[left] = 1;
-			sides[right] = 2;
+			if(clust[left] >= 0 || (acspo[left]&MaskLand) != 0){
+				fs[FSTAT_LSIZE]++;
+				sides[left] = 1;
+				(*(int*)leftcount.ptr(cclabels[k], clust[left], true))++;
+			}
+			if(clust[right] >= 0 || (acspo[right]&MaskLand) != 0){
+				fs[FSTAT_RSIZE]++;
+				sides[right] = 2;
+				(*(int*)rightcount.ptr(cclabels[k], clust[right], true))++;
+			}
 
 			k++;
 		}
 	}
 	
-	for(i = 0; i < ncc; i++){
+	logprintf("leftcount nonzero: %lu\n", leftcount.nzcount());
+	logprintf("rightcount nonzero: %lu\n", rightcount.nzcount());
+	
+	_adjclust.create(nclust, 1, CV_8UC1);
+	_adjclust = Scalar(0);
+	adjclust = _adjclust.data;
+	
+	for(i = 0; i < nfront; i++){
 		fs = &fstats[NFSTAT * i];
 		t = 0.7*fs[FSTAT_SIZE];
 		fs[FSTAT_WANT] = fs[FSTAT_LSIZE] > t && fs[FSTAT_RSIZE] > t;
+		
+		if(!fs[FSTAT_WANT])
+			continue;
+		
+		for(j = 0; j < nclust; j++){
+			p = (int*)leftcount.ptr(i, j, false);
+//			if(p)logprintf("left rat (%d, %d) = %f\n", i, j, *p/(double)fs[FSTAT_LSIZE]);
+			if(p && *p/(double)fs[FSTAT_LSIZE] > 0.3)
+				adjclust[j] = 255;
+
+			p = (int*)rightcount.ptr(i, j, false);
+//			if(p)logprintf("right rat (%d, %d) = %f\n", i, j, *p/(double)fs[FSTAT_RSIZE]);
+			if(p && *p/(double)fs[FSTAT_RSIZE] > 0.3)
+				adjclust[j] = 255;
+		}
 	}
 	
 	for(k = 0; k < (int)_fronts.total(); k++){
@@ -670,7 +698,47 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 		if(fs[FSTAT_WANT])
 			sides[k] = 3;
 	}
-	return ncc;
+	return nfront;
+}
+
+void
+restore_clust(Mat &_acspo, Mat &_clust, Mat &_adjclust, Mat &_newcs)
+{
+	Mat _labels, stats, centoids;
+	int i, *clust, *labels, nlab, n;
+	uchar *acspo, *adjclust, *newcs;
+	
+	CHECKMAT(_acspo, CV_8UC1);
+	CHECKMAT(_clust, CV_32SC1);
+	CHECKMAT(_adjclust, CV_8UC1);
+	acspo = _acspo.data;
+	clust = (int*)_clust.data;
+	adjclust = _adjclust.data;
+	
+	_newcs.create(_acspo.size(), CV_8UC1);
+	_newcs = Scalar(0);
+	newcs = _newcs.data;
+	
+	// Add to new clear-sky mask if:
+	// - pixels belongs to a cluster adjacent to a front
+	// - ACSPO says it's confidently cloudy
+	for(i = 0; i < (int)_acspo.total(); i++){
+		if(clust[i] >= 0 && adjclust[clust[i]] && (acspo[i]&MaskCloud) == MaskCloudSure)
+			newcs[i] = 255;
+	}
+	
+	nlab = connectedComponentsWithStats(_newcs, _labels, stats, centoids, 4, CV_32S);
+	if(nlab <= 1)
+		return;
+	
+	CHECKMAT(_labels, CV_32SC1);
+	labels = (int*)_labels.data;
+	
+	for(i = 0; i < (int)_labels.total(); i++){
+		n = labels[i];
+		if(n > 0 && stats.at<int>(n, CC_STAT_AREA) < 100)
+			newcs[i] = 0;
+	}
 }
 
 /*
@@ -700,8 +768,9 @@ main(int argc, char **argv)
 		m14gm, m15gm, m16gm,
 		acspo, dX, dY, gradmag, delta, omega, albedo, TQ, DQ, OQ, AQ,
 		lut, glabels, glabels_nn, feat, lam1, lam2,
-		easyclouds, easyfronts, fronts, flabels, fstats, sides, global_lut;
-	int ncid, n, ncc;
+		easyclouds, easyfronts, fronts, flabels, fstats, sides, global_lut,
+		adjclust, newcs;
+	int ncid, n, nclust;
 	char *path, *outpath;
 	Resample *r;
 
@@ -770,20 +839,24 @@ SAVENC(lut);
 	logprintf("global LUT size is %dx%dx%dx%d\n",
 		global_lut.size[0], global_lut.size[1], global_lut.size[2], global_lut.size[3]);
 	logprintf("quantized featured...\n");
-	ncc = quantized_features(TQ, AQ, lat, lon, sst, delta, omega, anomaly, global_lut, glabels, feat);
+	nclust = quantized_features(TQ, AQ, lat, lon, sst, delta, omega, anomaly, global_lut, glabels, feat);
 SAVENC(glabels);
 
 	glabels_nn = glabels.clone();
 	nnlabel(feat, lat, lon, sst, anomaly, easyclouds, gradmag, glabels_nn);
 SAVENC(glabels_nn);
 	
-	thermal_fronts(lam2, gradmag, stdf, ncc, glabels, glabels_nn, easyclouds, fronts);
+	thermal_fronts(lam2, gradmag, stdf, glabels, glabels_nn, easyclouds, fronts);
 SAVENC(fronts);
 
-	front_stats(fronts, dY, dX, gradmag, glabels_nn, acspo, 5, sides, flabels, fstats);
+	front_stats(fronts, dY, dX, gradmag, nclust, glabels_nn, acspo, 5, sides, flabels, fstats, adjclust);
 SAVENC(sides);
 SAVENC(flabels);
 SAVENC(fstats);
+SAVENC(adjclust);
+
+	restore_clust(acspo, glabels_nn, adjclust, newcs);
+SAVENC(newcs);
 
 	if(outpath){
 		logprintf("copying from %s to %s\n", path, outpath);
