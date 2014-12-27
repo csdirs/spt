@@ -754,60 +754,74 @@ resample_acloud(const Resample *r, const Mat &_acspo, Mat &_acloud)
 	resample_float32(r, _acloud, _acloud, false);
 }
 
-// Find new clear-sky pixels that needs to be restored.
+// Create the SPT mask containing the cloud mask with new clear-sky restored
+// and the fronts.
 //
 // r -- resampling context
 // acspo -- ACSPO mask sorted by latitude
 // _clust -- clustering labels image
 // _adjclust -- for each cluster, indicates if it's adjacent to a thernal front
-// _newcs -- new clear-sky that needs to be restored (output)
+// _fronts -- fronts image
+// _spt -- spt mask sorted by latitude (output)
 //
 void
-get_newcs(const Resample *r, const Mat &acspo, const Mat &_clust,
-	const Mat &_adjclust, const Mat &fronts, Mat &_newcs)
+get_spt(const Resample *r, const Mat &_acspo, const Mat &_clust,
+	const Mat &_adjclust, const Mat &_fronts, Mat &_spt)
 {
-	Mat _labels, stats, centoids, _acloud;
-	int i, *clust, *labels, nlab, n;
-	uchar *adjclust, *newcs;
+	Mat _labels, stats, centoids, _acloud, _mask;
 	float *acloud;
+	int i, *clust, *labels, nlab, n;
+	uchar *adjclust, *mask, *acspo, *spt;
+	schar *fronts;
 	
-	CHECKMAT(acspo, CV_8UC1);
+	CHECKMAT(_acspo, CV_8UC1);
 	CHECKMAT(_clust, CV_32SC1);
 	CHECKMAT(_adjclust, CV_8UC1);
+	CHECKMAT(_fronts, CV_8SC1);
+	acspo = _acspo.data;
 	clust = (int*)_clust.data;
 	adjclust = _adjclust.data;
+	fronts = (schar*)_fronts.data;
 	
-	resample_acloud(r, acspo, _acloud);
+	resample_acloud(r, _acspo, _acloud);
 	CHECKMAT(_acloud, CV_32FC1);
 savenc("acloud.nc", _acloud);
 	acloud = (float*)_acloud.data;
 	
-	_newcs.create(acspo.size(), CV_8UC1);
-	_newcs = Scalar(0);
-	newcs = _newcs.data;
-	
-	// Add to new clear-sky mask if:
-	// - pixels belongs to a cluster adjacent to a front
+	// Create a mask containing the new clear-sky pixels that we may potentially
+	// restore in ACSPO. It consists of pixels that satisfy:
+	// - belongs to a cluster adjacent to a front
 	// - ACSPO says it's confidently cloudy
 	// We're using the resampled/interpolated ACSPO cloud mask (acloud)
 	// so that the deleted zones doesn't split clusters into smaller ones.
-	for(i = 0; i < (int)_newcs.total(); i++){
+	_mask.create(_acspo.size(), CV_8UC1);
+	mask = _mask.data;
+	for(i = 0; i < (int)_mask.total(); i++){
+		mask[i] = 0;
 		if(clust[i] >= 0 && adjclust[clust[i]] && !isnan(acloud[i]) && acloud[i] > 0)
-			newcs[i] = 255;
+			mask[i] = 255;
 	}
 	
-	nlab = connectedComponentsWithStats(_newcs, _labels, stats, centoids, 4, CV_32S);
+	// run connected components on "new clear-sky" mask
+	nlab = connectedComponentsWithStats(_mask, _labels, stats, centoids, 4, CV_32S);
 	if(nlab <= 1)
 		return;
-	
 	CHECKMAT(_labels, CV_32SC1);
 	labels = (int*)_labels.data;
 	
-	// disable small components from being restored
+	// Create spt mask containing the fronts and the cloud mask.
+	// We disable small components from being restored as clear-sky.
+	_spt.create(_acspo.size(), CV_8UC1);
+	spt = _spt.data;
 	for(i = 0; i < (int)_labels.total(); i++){
+		spt[i] = acspo[i] >> MaskCloudOffset;
 		n = labels[i];
-		if(n > 0 && stats.at<int>(n, CC_STAT_AREA) < 100)
-			newcs[i] = 0;
+		if(n > 0 && stats.at<int>(n, CC_STAT_AREA) >= 100
+		&& (acspo[i]&MaskCloud) == MaskCloudSure)
+			spt[i] = MaskCloudClear >> MaskCloudOffset;
+
+		if(fronts[i] == FRONT_OK)
+			spt[i] |= 0x04;
 	}
 }
 
@@ -838,7 +852,7 @@ main(int argc, char **argv)
 		m14gm, m15gm, m16gm,
 		acspo, dX, dY, gradmag, delta, omega, albedo, TQ, DQ, OQ, AQ,
 		lut, glabels, glabels_nn, feat, lam1, lam2,
-		easyclouds, easyfronts, fronts, global_lut, adjclust, newcs;
+		easyclouds, easyfronts, fronts, global_lut, adjclust, spt;
 	int ncid, n, nclust;
 	char *path;
 	Resample *r;
@@ -920,8 +934,8 @@ SAVENC(glabels_nn);
 SAVENC(fronts);
 SAVENC(adjclust);
 
-	get_newcs(r, acspo, glabels_nn, adjclust, fronts, newcs);
-SAVENC(newcs);
+	get_spt(r, acspo, glabels_nn, adjclust, fronts, spt);
+SAVENC(spt);
 
 /*
 	logprintf("dilate...");
