@@ -420,14 +420,15 @@ logprintf("done searching nearest neighbors\n");
 void
 write_spt_mask(int ncid, Mat &spt)
 {
-	int n, varid, dimids[2];
+	int i, n, varid, ndims, dimids[2];
+	nc_type xtype;
+	size_t len;
 	
 	CHECKMAT(spt, CV_8UC1);
 	
+	// Create variable if it does not exist.
 	n = nc_inq_varid(ncid, SPT_MASK_NAME, &varid);
 	if(n != NC_NOERR){
-		// variable does not exist, so create it
-		
 		n = nc_inq_dimid(ncid, "scan_lines_along_track", &dimids[0]);
 		if(n != NC_NOERR)
 			ncfatal(n, "nc_inq_dimid failed");
@@ -439,8 +440,28 @@ write_spt_mask(int ncid, Mat &spt)
 		n = nc_def_var(ncid, SPT_MASK_NAME, NC_UBYTE, nelem(dimids), dimids, &varid);
 		if(n != NC_NOERR)
 			ncfatal(n, "nc_def_var failed");
+		n = nc_def_var_deflate(ncid, varid, 0, 1, 1);
+		if(n != NC_NOERR)
+			ncfatal(n, "setting deflate parameters failed");
 	}
 	
+	// Varify that the netcdf variable has correct type and dimensions.
+	n = nc_inq_var(ncid, varid, NULL, &xtype, &ndims, dimids, NULL);
+	if(n != NC_NOERR)
+		ncfatal(n, "nc_inq_var failed");
+	if(xtype != NC_UBYTE)
+		eprintf("variable type is %d, want %d\n", xtype, NC_UBYTE);
+	if(ndims != 2)
+		eprintf("variable dims is %d, want 2\n", ndims);
+	for(i = 0; i < 2; i++){
+		n = nc_inq_dimlen(ncid, dimids[i], &len);
+		if(n != NC_NOERR)
+			ncfatal(n, "nc_inq_dimlen failed");
+		if(len != (size_t)spt.size[i])
+			eprintf("dimension %d is %d, want %d\n", i, len, spt.size[i]);
+	}
+	
+	// Write data into netcdf variable.
 	n = nc_put_var_uchar(ncid, varid, spt.data);
 	if(n != NC_NOERR)
 		ncfatal(n, "nc_putvar_uchar failed");
