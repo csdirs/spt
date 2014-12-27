@@ -542,7 +542,6 @@ thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 	// dilate easyclouds
 	dilate(easyclouds, _dilc, getStructuringElement(MORPH_RECT, Size(7, 7)));
 	CHECKMAT(_dilc, CV_8UC1);
-SAVENC(_dilc);
 	dilc = _dilc.data;
 	
 	// compute thermal fronts image
@@ -572,11 +571,23 @@ SAVENC(_dilc);
 	}
 }
 
-int
-front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
-	int nclust, const Mat &_clust, const Mat &_acspo, double alpha,
-	Mat &_sides, Mat &_cclabels, Mat &_fstats, Mat &_adjclust)
+// Find clusters that are adjacent to a thermal front.
+//
+// _fronts -- fronts mask
+// _dy -- column-wise gradient
+// _dx -- row-wise gradient
+// _gradmag -- gradient magnitude
+// nclust -- number of clusters
+// _clust -- clustering labels
+// _acspo -- ACSPO mask
+// alpha -- factor multiplied to gradient for obtaining the sides
+// _adjclust -- mask indicated if the a cluster is adjacent to a front (output)
+//
+void
+find_adjclust(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
+	int nclust, const Mat &_clust, const Mat &_acspo, double alpha, Mat &_adjclust)
 {
+	Mat _sides, _cclabels, _fstats;
 	int i, j, *p, nfront, y, x, k, left, right, *cclabels, *clust;
 	schar *sides;
 	float *dy, *dx, *gradmag;
@@ -595,6 +606,10 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 	clust = (int*)_clust.data;
 	acspo = (uchar*)_acspo.data;
 	
+	// initialize output in case we bail early (e.g. if nfront <= 0)
+	_adjclust.create(nclust, 1, CV_8UC1);
+	_adjclust = Scalar(0);
+	
 	_sides.create(_fronts.size(), CV_8SC1);
 	_sides = Scalar(-1);
 	sides = (schar*)_sides.data;
@@ -602,7 +617,7 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 	// run connected components on fronts, eliminating small fronts
 	nfront = connectedComponentsWithLimit(_fronts, 8, 10, _cclabels);
 	if(nfront <= 0)
-		return 0;
+		return;
 	CHECKMAT(_cclabels, CV_32SC1);
 	cclabels = (int*)_cclabels.data;
 	logprintf("nfront = %d\n", nfront);
@@ -615,6 +630,7 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 	_fstats = Scalar(0);
 	fstats = (double*)_fstats.data;
 	
+	// find left and right sides of the fronts, and their statistics
 	k = 0;
 	for(y = 0; y < _fronts.rows; y++){
 		for(x = 0; x < _fronts.cols; x++){
@@ -653,10 +669,9 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 	logprintf("leftcount nonzero: %lu\n", leftcount.nzcount());
 	logprintf("rightcount nonzero: %lu\n", rightcount.nzcount());
 	
-	_adjclust.create(nclust, 1, CV_8UC1);
-	_adjclust = Scalar(0);
 	adjclust = _adjclust.data;
 	
+	// find which clusters are adjacent to a front
 	for(i = 0; i < nfront; i++){
 		fs = &fstats[NFSTAT * i];
 		t = 0.7*fs[FSTAT_SIZE];
@@ -667,17 +682,16 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 		
 		for(j = 0; j < nclust; j++){
 			p = (int*)leftcount.ptr(i, j, false);
-//			if(p)logprintf("left rat (%d, %d) = %f\n", i, j, *p/(double)fs[FSTAT_LSIZE]);
 			if(p && *p/(double)fs[FSTAT_LSIZE] > 0.3)
 				adjclust[j] = 255;
 
 			p = (int*)rightcount.ptr(i, j, false);
-//			if(p)logprintf("right rat (%d, %d) = %f\n", i, j, *p/(double)fs[FSTAT_RSIZE]);
 			if(p && *p/(double)fs[FSTAT_RSIZE] > 0.3)
 				adjclust[j] = 255;
 		}
 	}
 	
+	// set fronts that are accepted to 3 in the sides image
 	for(k = 0; k < (int)_fronts.total(); k++){
 		if(cclabels[k] < 0)
 			continue;
@@ -686,7 +700,9 @@ front_stats(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_grad
 		if(fs[FSTAT_WANT])
 			sides[k] = 3;
 	}
-	return nfront;
+savenc("sides.nc", _sides);
+savenc("flabels.nc", _cclabels);
+savenc("fstats.nc", _fstats);
 }
 
 // Resample ACSPO cloud mask to fill in deletion zones.
@@ -752,7 +768,7 @@ get_newcs(Resample *r, Mat &acspo, Mat &_clust, Mat &_adjclust, Mat &_newcs)
 	
 	resample_acloud(r, acspo, _acloud);
 	CHECKMAT(_acloud, CV_32FC1);
-	SAVENC(_acloud);
+savenc("acloud.nc", _acloud);
 	acloud = (float*)_acloud.data;
 	
 	_newcs.create(acspo.size(), CV_8UC1);
@@ -810,16 +826,14 @@ main(int argc, char **argv)
 		m14gm, m15gm, m16gm,
 		acspo, dX, dY, gradmag, delta, omega, albedo, TQ, DQ, OQ, AQ,
 		lut, glabels, glabels_nn, feat, lam1, lam2,
-		easyclouds, easyfronts, fronts, flabels, fstats, sides, global_lut,
-		adjclust, newcs;
+		easyclouds, easyfronts, fronts, global_lut, adjclust, newcs;
 	int ncid, n, nclust;
-	char *path, *outpath;
+	char *path;
 	Resample *r;
 
-	if(argc < 2 || argc > 3)
+	if(argc < 2)
 		eprintf("usage: %s granule [output]\n", argv[0]);
 	path = argv[1];
-	outpath = argc == 3 ? argv[2] : NULL;
 	logprintf("granule: %s\n", path);
 	
 	logprintf("reading and resampling...\n");
@@ -891,19 +905,11 @@ SAVENC(glabels_nn);
 	thermal_fronts(lam2, gradmag, stdf, glabels, glabels_nn, easyclouds, fronts);
 SAVENC(fronts);
 
-	front_stats(fronts, dY, dX, gradmag, nclust, glabels_nn, acspo, 5, sides, flabels, fstats, adjclust);
-SAVENC(sides);
-SAVENC(flabels);
-SAVENC(fstats);
+	find_adjclust(fronts, dY, dX, gradmag, nclust, glabels_nn, acspo, 5, adjclust);
 SAVENC(adjclust);
 
 	get_newcs(r, acspo, glabels_nn, adjclust, newcs);
 SAVENC(newcs);
-
-	if(outpath){
-		logprintf("copying from %s to %s\n", path, outpath);
-		copyfile(path, outpath);
-	}
 
 /*
 	logprintf("dilate...");
