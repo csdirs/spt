@@ -21,8 +21,16 @@ enum {
 	FSTAT_SIZE,	// front size in pixels
 	FSTAT_LSIZE,	// left side size
 	FSTAT_RSIZE,	// right side size
-	FSTAT_WANT,	// do we want this front?
+	FSTAT_OK,	// do we want this front?
 	NFSTAT,
+};
+
+// thernal fronts and their sides
+enum {
+	FRONT_MAYBE,
+	FRONT_LEFT,	// left side
+	FRONT_RIGHT,	// right side
+	FRONT_OK,
 };
 
 // Return a filename based on granule path path with suffix suf.
@@ -581,13 +589,15 @@ thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 // _clust -- clustering labels
 // _acspo -- ACSPO mask
 // alpha -- factor multiplied to gradient for obtaining the sides
+// _sides -- image indicating accepted/rejected fronts and their left/right sides (output)
 // _adjclust -- mask indicated if the a cluster is adjacent to a front (output)
 //
 void
 find_adjclust(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
-	int nclust, const Mat &_clust, const Mat &_acspo, double alpha, Mat &_adjclust)
+	int nclust, const Mat &_clust, const Mat &_acspo, double alpha,
+	Mat &_sides, Mat &_adjclust)
 {
-	Mat _sides, _cclabels, _fstats;
+	Mat _cclabels, _fstats;
 	int i, j, *p, nfront, y, x, k, left, right, *cclabels, *clust;
 	schar *sides;
 	float *dy, *dx, *gradmag;
@@ -650,15 +660,15 @@ find_adjclust(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_gr
 			// compute statistics of front
 			fs = &fstats[NFSTAT * cclabels[k]];
 			fs[FSTAT_SIZE]++;
-			sides[k] = 0;
+			sides[k] = FRONT_MAYBE;
 			if(clust[left] >= 0 || (acspo[left]&MaskLand) != 0){
 				fs[FSTAT_LSIZE]++;
-				sides[left] = 1;
+				sides[left] = FRONT_LEFT;
 				(*(int*)leftcount.ptr(cclabels[k], clust[left], true))++;
 			}
 			if(clust[right] >= 0 || (acspo[right]&MaskLand) != 0){
 				fs[FSTAT_RSIZE]++;
-				sides[right] = 2;
+				sides[right] = FRONT_RIGHT;
 				(*(int*)rightcount.ptr(cclabels[k], clust[right], true))++;
 			}
 
@@ -675,9 +685,9 @@ find_adjclust(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_gr
 	for(i = 0; i < nfront; i++){
 		fs = &fstats[NFSTAT * i];
 		t = 0.7*fs[FSTAT_SIZE];
-		fs[FSTAT_WANT] = fs[FSTAT_LSIZE] > t && fs[FSTAT_RSIZE] > t;
+		fs[FSTAT_OK] = fs[FSTAT_LSIZE] > t && fs[FSTAT_RSIZE] > t;
 		
-		if(!fs[FSTAT_WANT])
+		if(!fs[FSTAT_OK])
 			continue;
 		
 		for(j = 0; j < nclust; j++){
@@ -697,10 +707,9 @@ find_adjclust(const Mat &_fronts, const Mat &_dy, const Mat &_dx, const Mat &_gr
 			continue;
 		
 		fs = &fstats[NFSTAT * cclabels[k]];
-		if(fs[FSTAT_WANT])
-			sides[k] = 3;
+		if(fs[FSTAT_OK])
+			sides[k] = FRONT_OK;
 	}
-savenc("sides.nc", _sides);
 savenc("flabels.nc", _cclabels);
 savenc("fstats.nc", _fstats);
 }
@@ -714,7 +723,7 @@ savenc("fstats.nc", _fstats);
 //	cloud/clear sky boundary. (output)
 //
 void
-resample_acloud(Resample *r, Mat &_acspo, Mat &_acloud)
+resample_acloud(const Resample *r, const Mat &_acspo, Mat &_acloud)
 {
 	int i;
 	uchar *acspo;
@@ -753,7 +762,8 @@ resample_acloud(Resample *r, Mat &_acspo, Mat &_acloud)
 // _newcs -- new clear-sky that needs to be restored (output)
 //
 void
-get_newcs(Resample *r, Mat &acspo, Mat &_clust, Mat &_adjclust, Mat &_newcs)
+get_newcs(const Resample *r, const Mat &acspo, const Mat &_clust,
+	const Mat &_adjclust, const Mat &fronts, Mat &_newcs)
 {
 	Mat _labels, stats, centoids, _acloud;
 	int i, *clust, *labels, nlab, n;
@@ -792,6 +802,7 @@ savenc("acloud.nc", _acloud);
 	CHECKMAT(_labels, CV_32SC1);
 	labels = (int*)_labels.data;
 	
+	// disable small components from being restored
 	for(i = 0; i < (int)_labels.total(); i++){
 		n = labels[i];
 		if(n > 0 && stats.at<int>(n, CC_STAT_AREA) < 100)
@@ -826,7 +837,7 @@ main(int argc, char **argv)
 		m14gm, m15gm, m16gm,
 		acspo, dX, dY, gradmag, delta, omega, albedo, TQ, DQ, OQ, AQ,
 		lut, glabels, glabels_nn, feat, lam1, lam2,
-		easyclouds, easyfronts, fronts, global_lut, adjclust, newcs;
+		easyclouds, easyfronts, fronts, global_lut, sides, adjclust, newcs;
 	int ncid, n, nclust;
 	char *path;
 	Resample *r;
@@ -905,10 +916,11 @@ SAVENC(glabels_nn);
 	thermal_fronts(lam2, gradmag, stdf, glabels, glabels_nn, easyclouds, fronts);
 SAVENC(fronts);
 
-	find_adjclust(fronts, dY, dX, gradmag, nclust, glabels_nn, acspo, 5, adjclust);
+	find_adjclust(fronts, dY, dX, gradmag, nclust, glabels_nn, acspo, 5, sides, adjclust);
+SAVENC(sides);
 SAVENC(adjclust);
 
-	get_newcs(r, acspo, glabels_nn, adjclust, newcs);
+	get_newcs(r, acspo, glabels_nn, adjclust, fronts, newcs);
 SAVENC(newcs);
 
 /*
