@@ -422,10 +422,11 @@ logprintf("done searching nearest neighbors\n");
 	// TODO: erode glabels by 21, but not where gradmag < GRAD_LOW
 }
 
-#define SPT_MASK_NAME	"spt_mask"
+#define VAR_NAME	"spt_mask"
+const char VAR_UNITS[] = "none";
+const char VAR_DESCR[] = "SPT mask packed into 1 byte: bits1-2 (00=clear; 01=probably clear; 10=cloudy; 11=clear-sky mask undefined); bit3 (0=no thermal front; 1=thermal front)";
 
-// TODO: unsort _acspo and _glabels
-// TODO: save cloud mask on least 2 significant bits
+// Write spt into NetCDF dataset ncid as variable named "spt_mask".
 //
 void
 write_spt_mask(int ncid, Mat &spt)
@@ -436,8 +437,12 @@ write_spt_mask(int ncid, Mat &spt)
 	
 	CHECKMAT(spt, CV_8UC1);
 	
-	// Create variable if it does not exist.
-	n = nc_inq_varid(ncid, SPT_MASK_NAME, &varid);
+	// chunk sizes used by acspo_mask
+	const size_t chunksizes[] = {1024, 3200};
+	
+	// It's not possible to delete a NetCDF variable, so attempt to use
+	// the variable if it already exists. Create the variable if it does not exist.
+	n = nc_inq_varid(ncid, VAR_NAME, &varid);
 	if(n != NC_NOERR){
 		n = nc_inq_dimid(ncid, "scan_lines_along_track", &dimids[0]);
 		if(n != NC_NOERR)
@@ -447,12 +452,22 @@ write_spt_mask(int ncid, Mat &spt)
 		if(n != NC_NOERR)
 			ncfatal(n, "nc_inq_dimid failed");
 		
-		n = nc_def_var(ncid, SPT_MASK_NAME, NC_UBYTE, nelem(dimids), dimids, &varid);
+		n = nc_def_var(ncid, VAR_NAME, NC_UBYTE, nelem(dimids), dimids, &varid);
 		if(n != NC_NOERR)
 			ncfatal(n, "nc_def_var failed");
+		n = nc_def_var_chunking(ncid, varid, NC_CHUNKED, chunksizes);
+		if(n != NC_NOERR)
+			ncfatal(n, "nc_def_var_chunking failed");
 		n = nc_def_var_deflate(ncid, varid, 0, 1, 1);
 		if(n != NC_NOERR)
 			ncfatal(n, "setting deflate parameters failed");
+		
+		n = nc_put_att_text(ncid, varid, "UNITS", nelem(VAR_UNITS)-1, VAR_UNITS);
+		if(n != NC_NOERR)
+			ncfatal(n, "setting attribute UNITS failed");
+		n = nc_put_att_text(ncid, varid, "Description", nelem(VAR_DESCR)-1, VAR_DESCR);
+		if(n != NC_NOERR)
+			ncfatal(n, "setting attribute Description failed");
 	}
 	
 	// Varify that the netcdf variable has correct type and dimensions.
@@ -852,7 +867,7 @@ main(int argc, char **argv)
 		m14gm, m15gm, m16gm,
 		acspo, dX, dY, gradmag, delta, omega, albedo, TQ, DQ, OQ, AQ,
 		lut, glabels, glabels_nn, feat, lam1, lam2,
-		easyclouds, easyfronts, fronts, global_lut, adjclust, spt;
+		easyclouds, easyfronts, fronts, global_lut, adjclust, spt, spt1;
 	int ncid, n, nclust;
 	char *path;
 	Resample *r;
@@ -864,23 +879,18 @@ main(int argc, char **argv)
 	
 	logprintf("reading and resampling...\n");
 	r = new Resample;
-	ncid = open_resampled(path, r);
+	ncid = open_resampled(path, r, NC_WRITE);
 	sst = readvar_resampled(ncid, r, "sst_regression");
 	cmc = readvar_resampled(ncid, r, "sst_reynolds");
 	lat = readvar_resampled(ncid, r, "latitude");
 	lon = readvar_resampled(ncid, r, "longitude");
-	// TODO: interpolate acspo
 	acspo = readvar_resampled(ncid, r, "acspo_mask");
 	m14 = readvar_resampled(ncid, r, "brightness_temp_chM14");
 	m15 = readvar_resampled(ncid, r, "brightness_temp_chM15");
 	m16 = readvar_resampled(ncid, r, "brightness_temp_chM16");
 	albedo = readvar_resampled(ncid, r, "albedo_chM7");
-	n = nc_close(ncid);
-	if(n != NC_NOERR)
-		ncfatal(n, "nc_close failed for %s", path);
 
 SAVENC(lat);
-SAVENC(lon);
 SAVENC(acspo);
 SAVENC(sst);
 SAVENC(albedo);
@@ -905,17 +915,11 @@ SAVENC(lam2);
 SAVENC(stdf);
 SAVENC(easyclouds);
 
-	easyfronts = (sst > SST_LOW) & (gradmag > 0.5)
-		& (stdf < STD_THRESH) & (lam2 < -0.05);
-SAVENC(easyfronts);
+	//easyfronts = (sst > SST_LOW) & (gradmag > 0.5)
+	//	& (stdf < STD_THRESH) & (lam2 < -0.05);
 
 	logprintf("quantize sst delta...\n");
 	quantize(lat, sst, delta, omega, anomaly, gradmag, albedo, acspo, TQ, DQ, OQ, AQ, lut);
-SAVENC(TQ);
-SAVENC(DQ);
-SAVENC(OQ);
-SAVENC(lut);
-//savenc(savefilename(path, "_lut.nc"), lut);
 
 	loadnc("global_lut/lut.nc", global_lut);
 	logprintf("global LUT size is %dx%dx%dx%d\n",
@@ -937,25 +941,14 @@ SAVENC(adjclust);
 	get_spt(r, acspo, glabels_nn, adjclust, fronts, spt);
 SAVENC(spt);
 
-/*
-	logprintf("dilate...");
-	elem = getStructuringElement(MORPH_RECT, Size(3, 3), Point(1, 1));
-	dilate(interpsst, sstdil, elem);
-	logprintf("erode...");
-	erode(interpsst, sstero, elem);
-	logprintf("rangefilt...");
-	subtract(sstdil, sstero, rfilt);
+	spt1 = resample_unsort(r->sind, spt);
+	write_spt_mask(ncid, spt1);
 
-	logprintf("laplacian...");
-	laplacian(interpsst, sstlap);
+	n = nc_close(ncid);
+	if(n != NC_NOERR)
+		ncfatal(n, "nc_close failed for %s", path);
 
-	cmapimshow("gradmag", gradmag, COLORMAP_JET);
-
-	while(waitKey(0) != 'q')
-		;
-*/
-
-	logprintf("done\n");
 	delete r;
+	logprintf("done\n");
 	return 0;
 }

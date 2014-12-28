@@ -162,12 +162,12 @@ ncfatal(int n, const char *fmt, ...)
 
 // Open NetCDF file at path and initialize r.
 int
-open_resampled(const char *path, Resample *r)
+open_resampled(const char *path, Resample *r, int omode)
 {
 	int ncid, n;
 	Mat lat, acspo;
 	
-	n = nc_open(path, NC_NOWRITE, &ncid);
+	n = nc_open(path, omode, &ncid);
 	if(n != NC_NOERR)
 		ncfatal(n, "nc_open failed for %s", path);
 	readvar(ncid, "acspo_mask", acspo);
