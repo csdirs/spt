@@ -1,3 +1,7 @@
+//
+// Quantization of variables
+//
+
 #include "spt.h"
 
 int

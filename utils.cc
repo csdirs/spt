@@ -1,3 +1,7 @@
+//
+// Utility functions
+//
+
 #include "spt.h"
 
 void

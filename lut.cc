@@ -1,3 +1,7 @@
+//
+// Lookup Table based on albedo on multiple granules
+//
+
 #include "spt.h"
 
 void

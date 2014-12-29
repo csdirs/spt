@@ -1,3 +1,7 @@
+//
+// SST Pattern Test
+//
+
 #include "spt.h"
 
 #define CHECKMAT(M, T)	CV_Assert((M).type() == (T) && (M).isContinuous())
@@ -872,8 +876,8 @@ main(int argc, char **argv)
 	char *path;
 	Resample *r;
 
-	if(argc < 2)
-		eprintf("usage: %s granule [output]\n", argv[0]);
+	if(argc != 2)
+		eprintf("usage: %s granule\n", argv[0]);
 	path = argv[1];
 	logprintf("granule: %s\n", path);
 	

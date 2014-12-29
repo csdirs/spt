@@ -1,3 +1,7 @@
+//
+// Image processing filters
+//
+
 #include "spt.h"
 
 // Compute the laplacian filter of image src into dst.

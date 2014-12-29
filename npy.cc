@@ -1,3 +1,7 @@
+//
+// Numpy .npy file format reader/writer
+//
+
 #include "spt.h"
 
 static void

@@ -1,3 +1,7 @@
+//
+// SST Pattern Test
+//
+
 #include <opencv2/opencv.hpp>
 #include <netcdf.h>
 #include <stdio.h>

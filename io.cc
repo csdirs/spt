@@ -1,3 +1,7 @@
+//
+// I/O utility functions
+//
+
 #include "spt.h"
 
 enum {

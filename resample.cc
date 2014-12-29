@@ -1,3 +1,7 @@
+//
+// Resampling of image based on latitude
+//
+
 #include "spt.h"
 
 template <class T>

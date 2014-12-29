@@ -1,3 +1,7 @@
+//
+// Program that resamples variables in a granule
+//
+
 #include "spt.h"
 
 void
