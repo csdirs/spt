@@ -681,12 +681,14 @@ find_adjclust(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 			fs = &fstats[NFSTAT * cclabels[k]];
 			fs[FSTAT_SIZE]++;
 			fronts[k] = FRONT_BIG;
-			if(clust[left] >= 0 || (acspo[left]&MaskLand) != 0){
+			if(0 <= left && left < (int)_fronts.total()
+			&& (clust[left] >= 0 || (acspo[left]&MaskLand) != 0)){
 				fs[FSTAT_LSIZE]++;
 				fronts[left] = FRONT_LEFT;
 				(*(int*)leftcount.ptr(cclabels[k], clust[left], true))++;
 			}
-			if(clust[right] >= 0 || (acspo[right]&MaskLand) != 0){
+			if(0 <= right && right < (int)_fronts.total()
+			&& (clust[right] >= 0 || (acspo[right]&MaskLand) != 0)){
 				fs[FSTAT_RSIZE]++;
 				fronts[right] = FRONT_RIGHT;
 				(*(int*)rightcount.ptr(cclabels[k], clust[right], true))++;
@@ -931,15 +933,19 @@ SAVENC(glabels);
 	nnlabel(feat, lat, lon, sst, anomaly, easyclouds, gradmag, glabels_nn);
 SAVENC(glabels_nn);
 	
+	logprintf("finding thermal fronts...\n");
 	thermal_fronts(lam2, gradmag, stdf, glabels, glabels_nn, easyclouds, fronts);
 
+	logprintf("finding clusters adjacent to fronts...\n");
 	find_adjclust(dY, dX, gradmag, nclust, glabels_nn, acspo, 5, fronts, adjclust);
 SAVENC(fronts);
 SAVENC(adjclust);
 
+	logprintf("creating spt mask...\n");
 	get_spt(r, acspo, glabels_nn, adjclust, fronts, spt);
 SAVENC(spt);
 
+	logprintf("saving spt mask...\n");
 	spt1 = resample_unsort(r->sind, spt);
 	write_spt_mask(ncid, spt1);
 
