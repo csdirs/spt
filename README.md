@@ -3,12 +3,11 @@
 This is a work-in-progress rewrite of the implementation described in
 this publication:
 
-	Gladkova, I., Kihai, Y., Ignatov, A., Shahriar, F., &
-	Petrenko, B. (2014, May). *Exploring pattern recognition
-	enhancements to ACSPO clear-sky mask for VIIRS: potential
-	and limitations.* In SPIE Sensing Technology+ Applications
-	(pp. 91110G-91110G). International Society for Optics and
-	Photonics.
+	Gladkova, I., Kihai, Y., Ignatov, A., Shahriar, F., & Petrenko, B. (2014,
+	May). Exploring pattern recognition enhancements to ACSPO clear-sky
+	mask for VIIRS: potential and limitations. In SPIE Sensing Technology+
+	Applications (pp. 91110G-91110G). International Society for Optics
+	and Photonics.
 
 ### Dependencies
 
