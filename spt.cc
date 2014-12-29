@@ -925,11 +925,8 @@ SAVENC(easyclouds);
 	logprintf("quantize sst delta...\n");
 	quantize(lat, sst, delta, omega, anomaly, gradmag, albedo, acspo, TQ, DQ, OQ, AQ, lut);
 
-	loadnc("global_lut/lut.nc", global_lut);
-	logprintf("global LUT size is %dx%dx%dx%d\n",
-		global_lut.size[0], global_lut.size[1], global_lut.size[2], global_lut.size[3]);
 	logprintf("quantized featured...\n");
-	nclust = quantized_features(TQ, AQ, lat, lon, sst, delta, omega, anomaly, global_lut, glabels, feat);
+	nclust = quantized_features(TQ, AQ, lat, lon, sst, delta, omega, anomaly, lut, glabels, feat);
 SAVENC(glabels);
 
 	glabels_nn = glabels.clone();
