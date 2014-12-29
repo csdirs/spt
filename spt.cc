@@ -650,7 +650,7 @@ find_adjclust(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 		return;
 	CHECKMAT(_cclabels, CV_32SC1);
 	cclabels = (int*)_cclabels.data;
-	logprintf("nfront = %d\n", nfront);
+	logprintf("initial number of fronts: %d\n", nfront);
 	
 	int countsize[] = {nfront, nclust};
 	SparseMat leftcount(nelem(countsize), countsize, CV_32SC1);
@@ -696,8 +696,8 @@ find_adjclust(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 		}
 	}
 	
-	logprintf("leftcount nonzero: %lu\n", leftcount.nzcount());
-	logprintf("rightcount nonzero: %lu\n", rightcount.nzcount());
+	logprintf("number of pixels left of fronts: %lu\n", leftcount.nzcount());
+	logprintf("number of pixels right of fronts: %lu\n", rightcount.nzcount());
 	
 	adjclust = _adjclust.data;
 	
@@ -730,8 +730,8 @@ find_adjclust(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 		if(fs[FSTAT_OK])
 			fronts[k] = FRONT_OK;
 	}
-savenc("flabels.nc", _cclabels);
-savenc("fstats.nc", _fstats);
+if(DEBUG)savenc("flabels.nc", _cclabels);
+if(DEBUG)savenc("fstats.nc", _fstats);
 }
 
 // Resample ACSPO cloud mask to fill in deletion zones.
@@ -804,7 +804,7 @@ get_spt(const Resample *r, const Mat &_acspo, const Mat &_clust,
 	
 	resample_acloud(r, _acspo, _acloud);
 	CHECKMAT(_acloud, CV_32FC1);
-savenc("acloud.nc", _acloud);
+if(DEBUG)savenc("acloud.nc", _acloud);
 	acloud = (float*)_acloud.data;
 	
 	// Create a mask containing the new clear-sky pixels that we may potentially
@@ -866,12 +866,10 @@ aggfronts = (agggradmag>0.3) & (glabels_nn>=0)
 int
 main(int argc, char **argv)
 {
-	Mat sst, cmc, anomaly, lat, lon, m14, m15, m16,
-		elem, sstdil, sstero, rfilt, sstlap, medf, stdf, blurf,
-		m14gm, m15gm, m16gm,
+	Mat sst, cmc, anomaly, lat, lon, m14, m15, m16, medf, stdf, blurf,
 		acspo, dX, dY, gradmag, delta, omega, albedo, TQ, DQ, OQ, AQ,
 		lut, glabels, glabels_nn, feat, lam1, lam2,
-		easyclouds, easyfronts, fronts, global_lut, adjclust, spt, spt1;
+		easyclouds, easyfronts, fronts, adjclust, spt, spt1;
 	int ncid, n, nclust;
 	char *path;
 	Resample *r;
@@ -899,7 +897,7 @@ SAVENC(acspo);
 SAVENC(sst);
 SAVENC(albedo);
 
-	logprintf("gradmag, etc. ...\n");
+	logprintf("computing gradmag, etc....\n");
 	delta = m15 - m16;
 	omega = m14 - m15;
 	anomaly = sst - cmc;
@@ -922,10 +920,10 @@ SAVENC(easyclouds);
 	//easyfronts = (sst > SST_LOW) & (gradmag > 0.5)
 	//	& (stdf < STD_THRESH) & (lam2 < -0.05);
 
-	logprintf("quantize sst delta...\n");
+	logprintf("quantizing sst delta...\n");
 	quantize(lat, sst, delta, omega, anomaly, gradmag, albedo, acspo, TQ, DQ, OQ, AQ, lut);
 
-	logprintf("quantized featured...\n");
+	logprintf("computing quantized features...\n");
 	nclust = quantized_features(TQ, AQ, lat, lon, sst, delta, omega, anomaly, lut, glabels, feat);
 SAVENC(glabels);
 

@@ -18,7 +18,7 @@ using namespace cv;
 #define SGN(A)   ((A) > 0 ? 1 : ((A) < 0 ? -1 : 0 ))
 #define nelem(x) (sizeof(x)/sizeof((x)[0]))
 #define SAVENPY(X)	savenpy(#X ".npy", (X))
-#define SAVENC(X)	savenc(#X ".nc", (X))
+#define SAVENC(X)	if(DEBUG)savenc(#X ".nc", (X))
 
 #define GRAD_THRESH 0.3
 #define GRAD_LOW 0.1
@@ -45,7 +45,7 @@ using namespace cv;
 #define OQ_HIST_STEP OQ_STEP
 
 enum {
-	DEBUG = 1,
+	DEBUG = 0,
 	
 	LUT_INVALID = -1,
 	LUT_OCEAN = 0,
