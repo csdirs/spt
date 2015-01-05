@@ -25,6 +25,7 @@ enum {
 	FSTAT_SIZE,	// front size in pixels
 	FSTAT_LSIZE,	// left side size
 	FSTAT_RSIZE,	// right side size
+	FSTAT_SUMMAG,	// SST gradient magnitude sum
 	FSTAT_OK,	// do we want this front?
 	NFSTAT,
 };
@@ -645,7 +646,7 @@ find_adjclust(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 	_adjclust = Scalar(0);
 	
 	// run connected components on fronts, eliminating small fronts
-	nfront = connectedComponentsWithLimit(_fronts==FRONT_INIT, 8, 10, _cclabels);
+	nfront = connectedComponentsWithLimit(_fronts==FRONT_INIT, 8, 50, _cclabels);
 	if(nfront <= 0)
 		return;
 	CHECKMAT(_cclabels, CV_32SC1);
@@ -680,6 +681,7 @@ find_adjclust(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 			// compute statistics of front
 			fs = &fstats[NFSTAT * cclabels[k]];
 			fs[FSTAT_SIZE]++;
+			fs[FSTAT_SUMMAG] += gradmag[k];
 			fronts[k] = FRONT_BIG;
 			if(0 <= left && left < (int)_fronts.total()
 			&& (clust[left] >= 0 || (acspo[left]&MaskLand) != 0)){
@@ -707,7 +709,8 @@ find_adjclust(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 	for(i = 0; i < nfront; i++){
 		fs = &fstats[NFSTAT * i];
 		t = 0.7*fs[FSTAT_SIZE];
-		fs[FSTAT_OK] = fs[FSTAT_LSIZE] > t && fs[FSTAT_RSIZE] > t;
+		fs[FSTAT_OK] = fs[FSTAT_LSIZE] > t && fs[FSTAT_RSIZE] > t
+			&& fs[FSTAT_SUMMAG]/fs[FSTAT_SIZE] > 0.25;
 		
 		if(!fs[FSTAT_OK])
 			continue;
