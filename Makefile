@@ -1,4 +1,4 @@
-PROG = spt
+TARG = spt
 CXX = g++
 CXXFLAGS = -g -Wall -Wfatal-errors -march=native -O2 -fopenmp
 LD = g++
@@ -21,13 +21,13 @@ HFILES = spt.h\
 	connectedcomponents.h\
 	
 
-all: $(PROG)
+all: $(TARG)
 
-$(PROG): $(OFILES)
-	$(LD) -o $(PROG) $(OFILES) $(LDFLAGS)
+$(TARG): $(OFILES)
+	$(LD) -o $(TARG) $(OFILES) $(LDFLAGS)
 
 %.o: %.cc $(HFILES)
 	$(CXX) -c $(CXXFLAGS) $<
 
 clean:
-	rm -f $(PROG) $(OFILES)
+	rm -f $(TARG) $(OFILES)
