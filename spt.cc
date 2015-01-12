@@ -926,7 +926,7 @@ SAVENC(easyclouds);
 	//	& (stdf < STD_THRESH) & (lam2 < -0.05);
 
 	logprintf("quantizing sst delta...\n");
-	quantize(lat, sst, delta, omega, anomaly, gradmag, albedo, acspo, TQ, DQ, OQ, AQ, lut);
+	quantize(lat, sst, delta, omega, anomaly, gradmag, stdf, albedo, acspo, TQ, DQ, OQ, AQ, lut);
 
 	logprintf("computing quantized features...\n");
 	nclust = quantized_features(TQ, AQ, lat, lon, sst, delta, omega, anomaly, lut, glabels, feat);

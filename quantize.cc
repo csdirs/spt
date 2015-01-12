@@ -51,11 +51,11 @@ quantize_anomaly(float anomaly)
 void
 quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta,
 	const Mat &_omega, const Mat &_anomaly,
-	const Mat &_gradmag, Mat &_albedo, Mat &_acspo,
+	const Mat &_gradmag, const Mat &_stdf, Mat &_albedo, Mat &_acspo,
 	Mat &TQ, Mat &DQ, Mat &OQ, Mat &AQ, Mat &lut)
 {
 	int i, j, k, ncloud[LUT_LAT_SPLIT], nocean[LUT_LAT_SPLIT];
-	float *lat, *sst, *delta, *omega, *anomaly, *gm, *albedo;
+	float *lat, *sst, *delta, *omega, *anomaly, *gm, *stdf, *albedo;
 	double o, c;
 	short *tq, *dq, *oq, *aq, li;
 	uchar *acspo;
@@ -66,6 +66,7 @@ quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta,
 	CV_Assert(_omega.type() == CV_32FC1);
 	CV_Assert(_anomaly.type() == CV_32FC1);
 	CV_Assert(_gradmag.type() == CV_32FC1);
+	CV_Assert(_stdf.type() == CV_32FC1);
 	CV_Assert(_albedo.type() == CV_32FC1);
 	CV_Assert(_acspo.type() == CV_8UC1);
 	
@@ -80,6 +81,7 @@ quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta,
 	omega = (float*)_omega.data;
 	anomaly = (float*)_anomaly.data;
 	gm = (float*)_gradmag.data;
+	stdf = (float*)_stdf.data;
 	albedo = (float*)_albedo.data;
 	acspo = _acspo.data;
 	tq = (short*)TQ.data;
@@ -111,6 +113,7 @@ quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta,
 		tq[i] = dq[i] = oq[i] = -1;
 		
 		if(gm[i] < GRAD_LOW		// && delta[i] > -0.5
+		&& stdf[i] < GRAD_LOW
 		&& !isnan(sst[i]) && !isnan(delta[i])
 		&& SST_LOW < sst[i] && sst[i] < SST_HIGH
 		&& DELTA_LOW < delta[i] && delta[i] < DELTA_HIGH

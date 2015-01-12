@@ -36,7 +36,7 @@ using namespace cv;
 #define STD_THRESH 0.5
 
 #define TQ_STEP 1
-#define DQ_STEP 0.5
+#define DQ_STEP 0.2
 #define OQ_STEP 0.5
 #define AQ_STEP 1
 
@@ -45,7 +45,7 @@ using namespace cv;
 #define OQ_HIST_STEP OQ_STEP
 
 enum {
-	DEBUG = 0,
+	DEBUG = 1,
 	
 	LUT_INVALID = -1,
 	LUT_OCEAN = 0,
@@ -121,7 +121,7 @@ void	stdfilter(const Mat &src, Mat &dst, int ksize);
 // quantize.cc
 void	quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta,
 	const Mat &_omega, const Mat &_anomaly,
-	const Mat &_gradmag, Mat &_albedo, Mat &_acspo,
+	const Mat &_gradmag, const Mat &_stdf, Mat &_albedo, Mat &_acspo,
 	Mat &TQ, Mat &DQ, Mat &OQ, Mat &AQ, Mat &lut);
 int	quantize_lat(float lat);
 int	quantize_sst(float sst);
