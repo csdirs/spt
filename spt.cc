@@ -11,6 +11,8 @@
 #define SCALE_SST(x)	(x)
 #define SCALE_ANOM(x)	(x)
 
+// TODO: replace anomaly with delta in features and connected component binning
+
 // features
 enum {
 	FEAT_LAT,
@@ -710,7 +712,7 @@ find_adjclust(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 		fs = &fstats[NFSTAT * i];
 		t = 0.7*fs[FSTAT_SIZE];
 		fs[FSTAT_OK] = fs[FSTAT_LSIZE] > t && fs[FSTAT_RSIZE] > t
-			&& fs[FSTAT_SUMMAG]/fs[FSTAT_SIZE] > 0.25;
+			&& fs[FSTAT_SUMMAG]/fs[FSTAT_SIZE] > 0.2;
 		
 		if(!fs[FSTAT_OK])
 			continue;
