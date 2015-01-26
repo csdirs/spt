@@ -104,17 +104,16 @@ connectedComponentsWithLimit(const Mat &mask, int connectivity, int lim, Mat &_c
 // t -- quantized SST value
 // a -- quantized anomaly value
 // tq, aq -- quantized SST, anomaly
-// sst, delta, omega, anomaly -- original SST, delta, omega, anomaly images
+// sst, delta, anomaly -- original SST, delta, omega, anomaly images
 // lat, lon -- latitude, longitude images
-// lut -- lookup table
 // _cclabels -- label assigned to pixels where (t == tq && d == dq) (output)
 // _feat -- features corresponding to _cclabels (output)
 //
 int
-quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
+clusterbin(Size size, int t, int a, const short *tq, const short *aq,
 	const float *sst, const float *delta, const float *anomaly,
 	const float *lat, const float *lon,
-	const Mat &lut, Mat &_cclabels, Mat &_feat)
+	Mat &_cclabels, Mat &_feat)
 {
 	Mat _mask, _count, _avgsst, _avgdelta, _avganom;
 	double *avgsst, *avgdelta, *avganom;
@@ -181,15 +180,14 @@ quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
 //
 // TQ, DQ -- quantized SST and delta images
 // _lat, _lon -- latitude, longitude images 
-// _sst, _delta, _omega, _anomaly -- SST, delta, omega, anomaly images
-// lut -- lookup table
+// _sst, _delta, _anomaly -- SST, delta, omega, anomaly images
 // _glabels -- global labels (output)
 // _feat -- features (output)
 //
 int
-quantized_features(const Mat &TQ, const Mat &AQ, const Mat &_lat, const Mat &_lon,
+cluster(const Mat &TQ, const Mat &AQ, const Mat &_lat, const Mat &_lon,
 	const Mat &_sst, const Mat &_delta, const Mat &_anomaly,
-	const Mat &lut, Mat &_glabels, Mat &_feat)
+	Mat &_glabels, Mat &_feat)
 {
 	int i, glab, *glabels;
 	float *lat, *lon, *sst, *delta, *anomaly, *feat;
@@ -202,7 +200,6 @@ quantized_features(const Mat &TQ, const Mat &AQ, const Mat &_lat, const Mat &_lo
 	CHECKMAT(_sst, CV_32FC1);
 	CHECKMAT(_delta, CV_32FC1);
 	CHECKMAT(_anomaly, CV_32FC1);
-	CHECKMAT(lut, CV_8SC1);
 	
 	_glabels.create(_sst.size(), CV_32SC1);
 	_feat.create(NFEAT, _sst.total(), CV_32FC1);
@@ -230,8 +227,8 @@ quantized_features(const Mat &TQ, const Mat &AQ, const Mat &_lat, const Mat &_lo
 			Mat _cclabels;
 			int ncc, lab, *cclabels;
 			
-			ncc = quantized_features_td(_sst.size(), t, a, tq, aq,
-				sst, delta, anomaly, lat, lon, lut, _cclabels, _feat);
+			ncc = clusterbin(_sst.size(), t, a, tq, aq,
+				sst, delta, anomaly, lat, lon, _cclabels, _feat);
 			CHECKMAT(_cclabels, CV_32SC1);
 			cclabels = (int*)_cclabels.data;
 			
@@ -886,7 +883,7 @@ SAVENC(easyclouds);
 	quantize(lat, sst, delta, omega, anomaly, gradmag, stdf, albedo, acspo, TQ, DQ, OQ, AQ, lut);
 
 	logprintf("computing quantized features...\n");
-	nclust = quantized_features(TQ, AQ, lat, lon, sst, delta, anomaly, lut, glabels, feat);
+	nclust = cluster(TQ, AQ, lat, lon, sst, delta, anomaly, glabels, feat);
 SAVENC(glabels);
 
 	glabels_nn = glabels.clone();
