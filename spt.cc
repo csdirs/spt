@@ -9,16 +9,14 @@
 #define SCALE_LAT(x)	((x) * 10)
 #define SCALE_LON(x)	((x) * 10)
 #define SCALE_SST(x)	(x)
-#define SCALE_ANOM(x)	(x)
-
-// TODO: replace anomaly with delta in features and connected component binning
+#define SCALE_DELTA(x)	(x)
 
 // features
 enum {
 	FEAT_LAT,
 	FEAT_LON,
 	FEAT_SST,
-	FEAT_ANOM,
+	FEAT_DELTA,
 	NFEAT,
 };
 
@@ -102,22 +100,22 @@ connectedComponentsWithLimit(const Mat &mask, int connectivity, int lim, Mat &_c
 //
 // size -- size of image
 // t -- quantized SST value
-// a -- quantized anomaly value
-// tq, aq -- quantized SST, anomaly
-// sst, delta, anomaly -- original SST, delta, omega, anomaly images
+// d -- quantized delta value
+// tq, dq -- quantized SST, delta images
+// sst, delta -- original SST, delta images
 // lat, lon -- latitude, longitude images
 // _cclabels -- label assigned to pixels where (t == tq && d == dq) (output)
 // _feat -- features corresponding to _cclabels (output)
 //
 int
-clusterbin(Size size, int t, int a, const short *tq, const short *aq,
-	const float *sst, const float *delta, const float *anomaly,
+clusterbin(Size size, int t, int d, const short *tq, const short *dq,
+	const float *sst, const float *delta,
 	const float *lat, const float *lon,
 	Mat &_cclabels, Mat &_feat)
 {
-	Mat _mask, _count, _avgsst, _avgdelta, _avganom;
-	double *avgsst, *avgdelta, *avganom;
-	float *feat_lat, *feat_lon, *feat_sst, *feat_anom;
+	Mat _mask, _count, _avgsst, _avgdelta;
+	double *avgsst, *avgdelta;
+	float *feat_lat, *feat_lon, *feat_sst, *feat_delta;
 	int i, ncc, lab, *cclabels, *count;
 	uchar *mask;
 	
@@ -125,7 +123,7 @@ clusterbin(Size size, int t, int a, const short *tq, const short *aq,
 	_mask.create(size, CV_8UC1);
 	mask = (uchar*)_mask.data;
 	for(i = 0; i < (int)_mask.total(); i++)
-		mask[i] = tq[i] == t && aq[i] == a ? 255 : 0;
+		mask[i] = tq[i] == t && dq[i] == d ? 255 : 0;
 	
 	ncc = connectedComponentsWithLimit(_mask, 4, 200, _cclabels);
 	if(ncc <= 0)
@@ -137,32 +135,28 @@ clusterbin(Size size, int t, int a, const short *tq, const short *aq,
 	_count = Mat::zeros(ncc, 1, CV_32SC1);
 	_avgsst = Mat::zeros(ncc, 1, CV_64FC1);
 	_avgdelta = Mat::zeros(ncc, 1, CV_64FC1);
-	_avganom = Mat::zeros(ncc, 1, CV_64FC1);
 	count = (int*)_count.data;
 	avgsst = (double*)_avgsst.data;
 	avgdelta = (double*)_avgdelta.data;
-	avganom = (double*)_avganom.data;
 	
-	// compute average of lat, sst, delta, and anomaly per component
+	// compute average per component
 	for(i = 0; i < size.area(); i++){
 		lab = cclabels[i];
-		if(lab >= 0 && !isnan(sst[i]) && !isnan(delta[i]) && !isnan(anomaly[i])){
+		if(lab >= 0 && !isnan(sst[i]) && !isnan(delta[i])){
 			avgsst[lab] += sst[i];
 			avgdelta[lab] += delta[i];
-			avganom[lab] += anomaly[i];
 			count[lab]++;
 		}
 	}
 	for(lab = 0; lab < ncc; lab++){
 		avgsst[lab] /= count[lab];
 		avgdelta[lab] /= count[lab];
-		avganom[lab] /= count[lab];
 	}
 
 	feat_lat = (float*)_feat.ptr(FEAT_LAT);
 	feat_lon = (float*)_feat.ptr(FEAT_LON);
 	feat_sst = (float*)_feat.ptr(FEAT_SST);
-	feat_anom = (float*)_feat.ptr(FEAT_ANOM);
+	feat_delta = (float*)_feat.ptr(FEAT_DELTA);
 	
 	for(i = 0; i < size.area(); i++){
 		lab = cclabels[i];
@@ -170,7 +164,7 @@ clusterbin(Size size, int t, int a, const short *tq, const short *aq,
 			feat_lat[i] = SCALE_LAT(lat[i]);
 			feat_lon[i] = SCALE_LON(lon[i]);
 			feat_sst[i] = SCALE_SST(avgsst[lab]);
-			feat_anom[i] = SCALE_ANOM(avganom[lab]);
+			feat_delta[i] = SCALE_DELTA(avgdelta[lab]);
 		}
 	}
 	return ncc;
@@ -180,38 +174,36 @@ clusterbin(Size size, int t, int a, const short *tq, const short *aq,
 //
 // TQ, DQ -- quantized SST and delta images
 // _lat, _lon -- latitude, longitude images 
-// _sst, _delta, _anomaly -- SST, delta, omega, anomaly images
+// _sst, _delta -- SST, delta images
 // _glabels -- global labels (output)
 // _feat -- features (output)
 //
 int
-cluster(const Mat &TQ, const Mat &AQ, const Mat &_lat, const Mat &_lon,
-	const Mat &_sst, const Mat &_delta, const Mat &_anomaly,
+cluster(const Mat &TQ, const Mat &DQ, const Mat &_lat, const Mat &_lon,
+	const Mat &_sst, const Mat &_delta,
 	Mat &_glabels, Mat &_feat)
 {
 	int i, glab, *glabels;
-	float *lat, *lon, *sst, *delta, *anomaly, *feat;
-	short *tq, *aq;
+	float *lat, *lon, *sst, *delta, *feat;
+	short *tq, *dq;
 	
 	CHECKMAT(TQ, CV_16SC1);
-	CHECKMAT(AQ, CV_16SC1);
+	CHECKMAT(DQ, CV_16SC1);
 	CHECKMAT(_lat, CV_32FC1);
 	CHECKMAT(_lon, CV_32FC1);
 	CHECKMAT(_sst, CV_32FC1);
 	CHECKMAT(_delta, CV_32FC1);
-	CHECKMAT(_anomaly, CV_32FC1);
 	
 	_glabels.create(_sst.size(), CV_32SC1);
 	_feat.create(NFEAT, _sst.total(), CV_32FC1);
 	
 	tq = (short*)TQ.data;
-	aq = (short*)AQ.data;
+	dq = (short*)DQ.data;
 	lat = (float*)_lat.data;
 	lon = (float*)_lon.data;
 	feat = (float*)_feat.data;
 	sst = (float*)_sst.data;
 	delta = (float*)_delta.data;
-	anomaly = (float*)_anomaly.data;
 	glabels = (int*)_glabels.data;
 	
 	for(i = 0; i < (int)_feat.total(); i++)
@@ -223,12 +215,12 @@ cluster(const Mat &TQ, const Mat &AQ, const Mat &_lat, const Mat &_lon,
 	#pragma omp parallel for
 	for(int t = quantize_sst(SST_LOW); t < quantize_sst(SST_HIGH); t++){
 		#pragma omp parallel for
-		for(int a = quantize_anomaly(ANOMALY_LOW); a < quantize_anomaly(ANOMALY_HIGH); a++){
+		for(int d = quantize_delta(DELTA_LOW); d < quantize_delta(DELTA_HIGH); d++){
 			Mat _cclabels;
 			int ncc, lab, *cclabels;
 			
-			ncc = clusterbin(_sst.size(), t, a, tq, aq,
-				sst, delta, anomaly, lat, lon, _cclabels, _feat);
+			ncc = clusterbin(_sst.size(), t, d, tq, dq,
+				sst, delta, lat, lon, _cclabels, _feat);
 			CHECKMAT(_cclabels, CV_32SC1);
 			cclabels = (int*)_cclabels.data;
 			
@@ -296,18 +288,18 @@ remove_inner_feats(Mat &_feat, const Mat &_glabels)
 // Update labels by nearest label training.
 //
 // _feat -- features (rows containing NaNs are removed)
-// _lat, _lon, _sst, _anomaly -- latitude, longitude, SST, anomaly images
+// _lat, _lon, _sst, _delta -- latitude, longitude, SST, delta images
 // _easyclouds -- easyclouds mask
 // _gradmag -- gradient magnitude
 // _glabels -- global labels (input & output)
 //
 static void
 nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon,
-	const Mat &_sst, const Mat &_anomaly,
+	const Mat &_sst, const Mat &_delta,
 	const Mat &_easyclouds, const Mat &_gradmag, Mat &_glabels)
 {
 	int i, k, *indices, *glabels;
-	float *vs, *vd, *lat, *lon, *sst, *anomaly, *gradmag;
+	float *vs, *vd, *lat, *lon, *sst, *delta, *gradmag;
 	Mat _indices, _labdil;
 	std::vector<float> q(NFEAT), dists(1);
 	std::vector<int> ind(1);
@@ -319,7 +311,7 @@ nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon,
 	CHECKMAT(_lat, CV_32FC1);
 	CHECKMAT(_lon, CV_32FC1);
 	CHECKMAT(_sst, CV_32FC1);
-	CHECKMAT(_anomaly, CV_32FC1);
+	CHECKMAT(_delta, CV_32FC1);
 	CHECKMAT(_easyclouds, CV_8UC1);
 	CHECKMAT(_gradmag, CV_32FC1);
 	CHECKMAT(_glabels, CV_32SC1);
@@ -355,7 +347,7 @@ logprintf("reduced number of features: %d\n", k);
 	lat = (float*)_lat.data;
 	lon = (float*)_lon.data;
 	sst = (float*)_sst.data;
-	anomaly = (float*)_anomaly.data;
+	delta = (float*)_delta.data;
 	glabels = (int*)_glabels.data;
 	easyclouds = (uchar*)_easyclouds.data;
 	gradmag = (float*)_gradmag.data;
@@ -365,14 +357,14 @@ logprintf("reduced number of features: %d\n", k);
 	for(i = 0; i < (int)_sst.total(); i++){
 		if(labdil[i] && glabels[i] < 0	// regions added by dilation
 		&& easyclouds[i] == 0
-		&& !isnan(sst[i]) && !isnan(anomaly[i])
+		&& !isnan(sst[i]) && !isnan(delta[i])
 		&& (gradmag[i] > GRAD_LOW || glabels[i] == COMP_SPECKLE)
 		&& SST_LOW < sst[i] && sst[i] < SST_HIGH
-		&& ANOMALY_LOW < anomaly[i] && anomaly[i] < ANOMALY_HIGH){
+		&& DELTA_LOW < delta[i] && delta[i] < DELTA_HIGH){
 			q[FEAT_LAT] = SCALE_LAT(lat[i]);
 			q[FEAT_LON] = SCALE_LON(lon[i]);
 			q[FEAT_SST] = SCALE_SST(sst[i]);
-			q[FEAT_ANOM] = SCALE_ANOM(anomaly[i]);
+			q[FEAT_DELTA] = SCALE_DELTA(delta[i]);
 			idx.knnSearch(q, ind, dists, 1, sparam);
 			if(dists[0] < 5)
 				glabels[i] = glabels[indices[ind[0]]];
@@ -883,11 +875,11 @@ SAVENC(easyclouds);
 	quantize(lat, sst, delta, omega, anomaly, gradmag, stdf, albedo, acspo, TQ, DQ, OQ, AQ, lut);
 
 	logprintf("computing quantized features...\n");
-	nclust = cluster(TQ, AQ, lat, lon, sst, delta, anomaly, glabels, feat);
+	nclust = cluster(TQ, DQ, lat, lon, sst, delta, glabels, feat);
 SAVENC(glabels);
 
 	glabels_nn = glabels.clone();
-	nnlabel(feat, lat, lon, sst, anomaly, easyclouds, gradmag, glabels_nn);
+	nnlabel(feat, lat, lon, sst, delta, easyclouds, gradmag, glabels_nn);
 SAVENC(glabels_nn);
 	
 	logprintf("finding thermal fronts...\n");

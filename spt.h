@@ -45,7 +45,7 @@ using namespace cv;
 #define OQ_HIST_STEP OQ_STEP
 
 enum {
-	DEBUG = 1,
+	DEBUG = 0,
 	
 	LUT_INVALID = -1,
 	LUT_OCEAN = 0,
