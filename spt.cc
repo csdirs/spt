@@ -112,14 +112,14 @@ connectedComponentsWithLimit(const Mat &mask, int connectivity, int lim, Mat &_c
 //
 int
 quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
-	const float *sst, const float *delta, const float *omega, const float *anomaly,
+	const float *sst, const float *delta, const float *anomaly,
 	const float *lat, const float *lon,
 	const Mat &lut, Mat &_cclabels, Mat &_feat)
 {
-	Mat _mask, _ccrename, _count, _avglat, _avgsst, _avgdelta, _avgomega, _avganom;
-	double *avglat, *avgsst, *avgdelta, *avgomega, *avganom;
+	Mat _mask, _count, _avgsst, _avgdelta, _avganom;
+	double *avgsst, *avgdelta, *avganom;
 	float *feat_lat, *feat_lon, *feat_sst, *feat_anom;
-	int i, ncc, lab, newlab, *cclabels, *ccrename, *count;
+	int i, ncc, lab, *cclabels, *count;
 	uchar *mask;
 	
 	// create mask for (t, d)
@@ -135,70 +135,29 @@ quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
 	CHECKMAT(_cclabels, CV_32SC1);
 	cclabels = (int*)_cclabels.data;
 	
-	_count.create(ncc, 1, CV_32SC1);
-	_avglat.create(ncc, 1, CV_64FC1);
-	_avgsst.create(ncc, 1, CV_64FC1);
-	_avgdelta.create(ncc, 1, CV_64FC1);
-	_avgomega.create(ncc, 1, CV_64FC1);
-	_avganom.create(ncc, 1, CV_64FC1);
+	_count = Mat::zeros(ncc, 1, CV_32SC1);
+	_avgsst = Mat::zeros(ncc, 1, CV_64FC1);
+	_avgdelta = Mat::zeros(ncc, 1, CV_64FC1);
+	_avganom = Mat::zeros(ncc, 1, CV_64FC1);
 	count = (int*)_count.data;
-	avglat = (double*)_avglat.data;
 	avgsst = (double*)_avgsst.data;
 	avgdelta = (double*)_avgdelta.data;
-	avgomega = (double*)_avgomega.data;
 	avganom = (double*)_avganom.data;
-	memset(count, 0, sizeof(*count)*ncc);
-	memset(avglat, 0, sizeof(*avglat)*ncc);
-	memset(avgsst, 0, sizeof(*avgsst)*ncc);
-	memset(avgdelta, 0, sizeof(*avgdelta)*ncc);
-	memset(avgomega, 0, sizeof(*avgomega)*ncc);
-	memset(avganom, 0, sizeof(*avganom)*ncc);
 	
-	// compute average of lat, sst, delta, omega and anomaly per component
+	// compute average of lat, sst, delta, and anomaly per component
 	for(i = 0; i < size.area(); i++){
 		lab = cclabels[i];
-		if(lab >= 0 && !isnan(sst[i]) && !isnan(delta[i]) && !isnan(omega[i]) && !isnan(anomaly[i])){
-			avglat[lab] += lat[i];
+		if(lab >= 0 && !isnan(sst[i]) && !isnan(delta[i]) && !isnan(anomaly[i])){
 			avgsst[lab] += sst[i];
 			avgdelta[lab] += delta[i];
-			avgomega[lab] += omega[i];
 			avganom[lab] += anomaly[i];
 			count[lab]++;
 		}
 	}
 	for(lab = 0; lab < ncc; lab++){
-		avglat[lab] /= count[lab];
 		avgsst[lab] /= count[lab];
 		avgdelta[lab] /= count[lab];
-		avgomega[lab] /= count[lab];
 		avganom[lab] /= count[lab];
-	}
-
-	// query LUT, remove components that are cloud and rename labels to be contiguous.
-	if(0){
-		CHECKMAT(lut, CV_8SC1);
-		_ccrename.create(ncc, 1, CV_32SC1);
-		ccrename = (int*)_ccrename.data;
-		memset(ccrename, 0, sizeof(*ccrename)*ncc);
-		newlab = 0;
-		for(lab = 0; lab < ncc; lab++){
-			int idx[] = {
-				quantize_lat(avglat[lab]),
-				quantize_sst(avgsst[lab]),
-				quantize_delta(avgdelta[lab]),
-				quantize_omega(avgomega[lab]),
-			};
-			if(lut.at<char>(idx) != LUT_CLOUD)
-				ccrename[lab] = newlab++;
-			else
-				ccrename[lab] = -1;
-		}
-		ncc = newlab;
-		for(i = 0; i < size.area(); i++){
-			lab = cclabels[i];
-			if(lab >= 0)
-				cclabels[i] = ccrename[lab];
-		}
 	}
 
 	feat_lat = (float*)_feat.ptr(FEAT_LAT);
@@ -229,11 +188,11 @@ quantized_features_td(Size size, int t, int a, const short *tq, const short *aq,
 //
 int
 quantized_features(const Mat &TQ, const Mat &AQ, const Mat &_lat, const Mat &_lon,
-	const Mat &_sst, const Mat &_delta, const Mat &_omega, const Mat &_anomaly,
+	const Mat &_sst, const Mat &_delta, const Mat &_anomaly,
 	const Mat &lut, Mat &_glabels, Mat &_feat)
 {
 	int i, glab, *glabels;
-	float *lat, *lon, *sst, *delta, *omega, *anomaly, *feat;
+	float *lat, *lon, *sst, *delta, *anomaly, *feat;
 	short *tq, *aq;
 	
 	CHECKMAT(TQ, CV_16SC1);
@@ -242,7 +201,6 @@ quantized_features(const Mat &TQ, const Mat &AQ, const Mat &_lat, const Mat &_lo
 	CHECKMAT(_lon, CV_32FC1);
 	CHECKMAT(_sst, CV_32FC1);
 	CHECKMAT(_delta, CV_32FC1);
-	CHECKMAT(_omega, CV_32FC1);
 	CHECKMAT(_anomaly, CV_32FC1);
 	CHECKMAT(lut, CV_8SC1);
 	
@@ -256,7 +214,6 @@ quantized_features(const Mat &TQ, const Mat &AQ, const Mat &_lat, const Mat &_lo
 	feat = (float*)_feat.data;
 	sst = (float*)_sst.data;
 	delta = (float*)_delta.data;
-	omega = (float*)_omega.data;
 	anomaly = (float*)_anomaly.data;
 	glabels = (int*)_glabels.data;
 	
@@ -274,7 +231,7 @@ quantized_features(const Mat &TQ, const Mat &AQ, const Mat &_lat, const Mat &_lo
 			int ncc, lab, *cclabels;
 			
 			ncc = quantized_features_td(_sst.size(), t, a, tq, aq,
-				sst, delta, omega, anomaly, lat, lon, lut, _cclabels, _feat);
+				sst, delta, anomaly, lat, lon, lut, _cclabels, _feat);
 			CHECKMAT(_cclabels, CV_32SC1);
 			cclabels = (int*)_cclabels.data;
 			
@@ -644,8 +601,7 @@ find_adjclust(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 	fronts = (schar*)_fronts.data;
 	
 	// initialize output in case we bail early (e.g. if nfront <= 0)
-	_adjclust.create(nclust, 1, CV_8UC1);
-	_adjclust = Scalar(0);
+	_adjclust = Mat::zeros(nclust, 1, CV_8UC1);
 	
 	// run connected components on fronts, eliminating small fronts
 	nfront = connectedComponentsWithLimit(_fronts==FRONT_INIT, 8, 50, _cclabels);
@@ -659,8 +615,7 @@ find_adjclust(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 	SparseMat leftcount(nelem(countsize), countsize, CV_32SC1);
 	SparseMat rightcount(nelem(countsize), countsize, CV_32SC1);
 
-	_fstats.create(nfront, NFSTAT, CV_64FC1);
-	_fstats = Scalar(0);
+	_fstats = Mat::zeros(nfront, NFSTAT, CV_64FC1);
 	fstats = (double*)_fstats.data;
 	
 	// find left and right sides of the fronts, and their statistics
@@ -931,7 +886,7 @@ SAVENC(easyclouds);
 	quantize(lat, sst, delta, omega, anomaly, gradmag, stdf, albedo, acspo, TQ, DQ, OQ, AQ, lut);
 
 	logprintf("computing quantized features...\n");
-	nclust = quantized_features(TQ, AQ, lat, lon, sst, delta, omega, anomaly, lut, glabels, feat);
+	nclust = quantized_features(TQ, AQ, lat, lon, sst, delta, anomaly, lut, glabels, feat);
 SAVENC(glabels);
 
 	glabels_nn = glabels.clone();
