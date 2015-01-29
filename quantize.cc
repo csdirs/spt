@@ -55,7 +55,7 @@ quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta,
 	Mat &TQ, Mat &DQ, Mat &OQ, Mat &AQ, Mat &lut)
 {
 	int i, j, k, ncloud[LUT_LAT_SPLIT], nocean[LUT_LAT_SPLIT];
-	float *lat, *sst, *delta, *omega, *anomaly, *gm, *stdf, *albedo;
+	float *lat, *sst, *delta, *omega, *anomaly, *gm, *albedo;
 	double o, c;
 	short *tq, *dq, *oq, *aq, li;
 	uchar *acspo;
@@ -81,7 +81,6 @@ quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta,
 	omega = (float*)_omega.data;
 	anomaly = (float*)_anomaly.data;
 	gm = (float*)_gradmag.data;
-	stdf = (float*)_stdf.data;
 	albedo = (float*)_albedo.data;
 	acspo = _acspo.data;
 	tq = (short*)TQ.data;
@@ -113,7 +112,6 @@ quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta,
 		tq[i] = dq[i] = oq[i] = -1;
 		
 		if(gm[i] < GRAD_LOW		// && delta[i] > -0.5
-		&& stdf[i] < GRAD_LOW
 		&& !isnan(sst[i]) && !isnan(delta[i])
 		&& SST_LOW < sst[i] && sst[i] < SST_HIGH
 		&& DELTA_LOW < delta[i] && delta[i] < DELTA_HIGH
