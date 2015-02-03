@@ -6,7 +6,8 @@ LDFLAGS = -fopenmp\
 	-lnetcdf\
 	-lopencv_core\
 	-lopencv_imgproc\
-	-lopencv_flann
+	-lopencv_flann\
+	-lopencv_highgui
 
 OFILES = \
 	utils.o\

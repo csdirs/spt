@@ -76,7 +76,7 @@ readvar(int ncid, const char *name, Mat &img)
 void
 savenc(const char *path, Mat &mat)
 {
-	int i, n, ncid, dimids[MAXDIMS], varid, xtype;
+	int i, n, ncid, dims, dimids[MAXDIMS], varid, xtype;
 	char *name;
 	const char *dimnames[MAXDIMS] = {
 		"dim0",
@@ -86,8 +86,11 @@ savenc(const char *path, Mat &mat)
 		"dim4",
 	};
 	
-	if(mat.dims > MAXDIMS)
-		eprintf("savenc: too many dimensions %d\n", mat.dims);
+	dims = mat.dims;
+	if(mat.channels() > 1)
+		dims++;
+	if(dims > MAXDIMS)
+		eprintf("savenc: too many dimensions %d\n", dims);
 	
 	n = nc_create(path, NC_NETCDF4, &ncid);
 	if(n != NC_NOERR)
@@ -98,22 +101,27 @@ savenc(const char *path, Mat &mat)
 		if(n != NC_NOERR)
 			ncfatal(n, "savenc: creating dim %d failed", i);
 	}
+	if(mat.channels() > 1){
+		n = nc_def_dim(ncid, dimnames[i], mat.channels(), &dimids[i]);
+		if(n != NC_NOERR)
+			ncfatal(n, "savenc: creating dim %d failed", i);
+	}
 	
 	xtype = -1;
-	switch(mat.type()){
+	switch(mat.depth()){
 	default:
 		eprintf("savenc: unsupported type %s\n", type2str(mat.type()));
 		break;
-	case CV_8UC1:	xtype = NC_UBYTE; break;
-	case CV_8SC1:	xtype = NC_BYTE; break;
-	case CV_16UC1:	xtype = NC_USHORT; break;
-	case CV_16SC1:	xtype = NC_SHORT; break;
-	case CV_32SC1:	xtype = NC_INT; break;
-	case CV_32FC1:	xtype = NC_FLOAT; break;
-	case CV_64FC1:	xtype = NC_DOUBLE; break;
+	case CV_8U:	xtype = NC_UBYTE; break;
+	case CV_8S:	xtype = NC_BYTE; break;
+	case CV_16U:	xtype = NC_USHORT; break;
+	case CV_16S:	xtype = NC_SHORT; break;
+	case CV_32S:	xtype = NC_INT; break;
+	case CV_32F:	xtype = NC_FLOAT; break;
+	case CV_64F:	xtype = NC_DOUBLE; break;
 	}
 	
-	n = nc_def_var(ncid, "data", xtype, mat.dims, dimids, &varid);
+	n = nc_def_var(ncid, "data", xtype, dims, dimids, &varid);
 	if(n != NC_NOERR)
 		ncfatal(n, "savenc: creating variable failed");
 	

@@ -51,6 +51,36 @@ enum {
 	FRONT_RIGHT,	// right side
 };
 
+// Cloud mask values
+enum {
+	CMClear,
+	CMProbably,
+	CMSure,
+	CMInvalid,
+};
+
+// Number of bits in cloud mask
+enum {
+	CMBits = 2,
+};
+
+enum {
+	White	= 0xFFFFFF,
+	Red		= 0xFF0000,
+	Green	= 0x00FF00,
+	Blue	= 0x0000FF,
+	Yellow	= 0xFFFF00,
+	JetRed	= 0x7F0000,
+	JetBlue	= 0x00007F,
+	JetGreen	= 0x7CFF79,
+};
+
+#define SetColor(v, c) do{ \
+		(v)[0] = ((c)>>16) & 0xFF; \
+		(v)[1] = ((c)>>8) & 0xFF; \
+		(v)[2] = ((c)>>0) & 0xFF; \
+	}while(0);
+
 // Return a filename based on granule path path with suffix suf.
 // e.g. savefilename("/foo/bar/qux.nc", ".png") returns "qux.png"
 //
@@ -71,6 +101,55 @@ savefilename(char *path, const char *suf)
 	p += n;
 	strcpy(p, suf);
 	return estrdup(buf);
+}
+
+static void
+diffcloudmask(const Mat &_old, const Mat &_new, Mat &_rgb)
+{
+	int i;
+	uchar *old, *new1, *rgb, oval, nval;
+	
+	CHECKMAT(_old, CV_8UC1);
+	CHECKMAT(_new, CV_8UC1);
+	
+	_rgb.create(_old.size(), CV_8UC3);
+	rgb = _rgb.data;
+	old = _old.data;
+	new1 = _new.data;
+	
+	for(i = 0; i < (int)_old.total(); i++){
+		oval = old[i]>>MaskCloudOffset;
+		nval = new1[i] & 0x03;
+		
+		if(oval == CMProbably)
+			oval = CMSure;
+		if(nval == CMProbably)
+			nval = CMSure;
+		
+		switch((oval<<CMBits) | nval){
+		default:
+			SetColor(rgb, Yellow);
+			break;
+		
+		case (CMInvalid<<CMBits) | CMInvalid:
+			SetColor(rgb, White);
+			break;
+		
+		case (CMClear<<CMBits) | CMClear:
+			SetColor(rgb, JetBlue);
+			break;
+		
+		case (CMSure<<CMBits) | CMSure:
+			SetColor(rgb, JetRed);
+			break;
+		
+		case (CMSure<<CMBits) | CMClear:
+		case (CMInvalid<<CMBits) | CMClear:
+			SetColor(rgb, JetGreen);
+			break;
+		}
+		rgb += 3;
+	}
 }
 
 int
@@ -806,32 +885,13 @@ if(DEBUG)savenc("acloud.nc", _acloud);
 	}
 }
 
-/*
-TODO:
-aggsst = np.copy(sst)
-for i in xrange(glabels_nn.max()+1):
-    mask = np.where(glabels_nn == i)
-    aggsst[mask] = np.nanmean(sst[mask])
-
-dX, dY = gradient(aggsst)
-agggradmag = np.sqrt(dX**2 + dY**2)
-aggstdf = stdfilt(aggsst - median_filter(aggsst, 5).astype('f8'), 7)
-aggfronts = (agggradmag>0.3) & (glabels_nn>=0)
-*/
-
-// TODO:
-// Li = cluster i pixels overlapping with one side
-// L = number of pixels on one side
-// if Li/L > 0.3, restore n pixels from cluster overlapping with confidently
-// cloudy acspo if n > 100
-
 int
 main(int argc, char **argv)
 {
 	Mat sst, cmc, anomaly, lat, lon, m14, m15, m16, medf, stdf, blurf,
-		acspo, dX, dY, gradmag, delta, omega, albedo, TQ, DQ, OQ, AQ,
+		acspo, acspo1, dX, dY, gradmag, delta, omega, albedo, TQ, DQ, OQ, AQ,
 		lut, glabels, glabels_nn, feat, lam1, lam2,
-		easyclouds, easyfronts, fronts, adjclust, spt, spt1;
+		easyclouds, easyfronts, fronts, adjclust, spt, spt1, diff;
 	int ncid, n, nclust;
 	char *path;
 	Resample *r;
@@ -865,6 +925,8 @@ SAVENC(albedo);
 	anomaly = sst - cmc;
 	gradientmag(sst, dX, dY, gradmag);
 	localmax(gradmag, lam2, lam1, 1);
+SAVENC(m15);
+SAVENC(m16);
 SAVENC(delta);
 SAVENC(omega);
 SAVENC(anomaly);
@@ -876,6 +938,7 @@ SAVENC(lam2);
 	//nanblur(sst, blurf, 7);
 	easyclouds = (sst < SST_LOW) | (stdf > STD_THRESH);
 		//| (abs(sst - blurf) > EDGE_THRESH);
+SAVENC(medf);
 SAVENC(stdf);
 SAVENC(easyclouds);
 
@@ -908,6 +971,12 @@ SAVENC(spt);
 	logprintf("saving spt mask...\n");
 	spt1 = resample_unsort(r->sind, spt);
 	write_spt_mask(ncid, spt1);
+	
+	acspo1 = resample_unsort(r->sind, acspo);
+	diffcloudmask(acspo1, spt1, diff);
+	resize(diff, diff, Size(), 1/6.0, 1/6.0, INTER_AREA);
+	imwrite("diff.png", diff);
+SAVENC(diff);
 
 	n = nc_close(ncid);
 	if(n != NC_NOERR)
