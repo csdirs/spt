@@ -14,6 +14,7 @@ The size of restoration |R| should not be greater than |F|**2
 
 
 #include "spt.h"
+#include "fastBilateral.hpp"
 
 #define CHECKMAT(M, T)	CV_Assert((M).type() == (T) && (M).isContinuous())
 
@@ -888,7 +889,7 @@ if(DEBUG)savenc("acloud.nc", _acloud);
 int
 main(int argc, char **argv)
 {
-	Mat sst, cmc, anomaly, lat, lon, m14, m15, m16, medf, stdf, blurf,
+	Mat sst, cmc, bila, anomaly, lat, lon, m14, m15, m16, medf, stdf, blurf,
 		acspo, acspo1, dX, dY, gradmag, delta, omega, albedo, TQ, DQ, OQ, AQ,
 		lut, glabels, glabels_nn, feat, lam1, lam2,
 		easyclouds, easyfronts, fronts, adjclust, spt, spt1, diff;
@@ -918,6 +919,9 @@ SAVENC(lat);
 SAVENC(acspo);
 SAVENC(sst);
 SAVENC(albedo);
+	
+	cv_extend::bilateralFilter(sst, bila, 100, 10);
+SAVENC(bila);
 
 	logprintf("computing gradmag, etc....\n");
 	delta = m15 - m16;
