@@ -772,8 +772,6 @@ find_adjclust(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 		if(fs[FSTAT_OK])
 			fronts[k] = FRONT_OK;
 	}
-if(DEBUG)savenc("flabels.nc", _cclabels);
-if(DEBUG)savenc("fstats.nc", _fstats);
 }
 
 // Resample ACSPO cloud mask to fill in deletion zones.
@@ -846,7 +844,6 @@ get_spt(const Resample *r, const Mat &_acspo, const Mat &_clust,
 	
 	resample_acloud(r, _acspo, _acloud);
 	CHECKMAT(_acloud, CV_32FC1);
-if(DEBUG)savenc("acloud.nc", _acloud);
 	acloud = (float*)_acloud.data;
 	
 	// Create a mask containing the new clear-sky pixels that we may potentially
@@ -886,6 +883,39 @@ if(DEBUG)savenc("acloud.nc", _acloud);
 	}
 }
 
+void
+bilateral(const Mat &_sst, const Mat &_easyclouds, Mat &_dst, double sigma_color, double sigma_space)
+{
+	int i;
+	Mat _src;
+	float *sst, *src, *dst;
+	uchar *easyclouds;
+
+	CHECKMAT(_easyclouds, CV_8UC1);
+	CHECKMAT(_sst, CV_32FC1);
+	_src = _sst.clone();	// TODO: copy necessary here?
+	
+	easyclouds = _easyclouds.data;
+	sst = (float*)_sst.data;
+	src = (float*)_src.data;
+	
+	for(i = 0; i < (int)_sst.total(); i++){
+		if(easyclouds[i])
+			src[i] = -1;
+		else if(sst[i] > SST_HIGH)
+			src[i] = SST_HIGH;
+	}
+if(DEBUG)savenc("bilasrc.nc", _src);
+	cv_extend::bilateralFilter(_src, _dst, sigma_color, sigma_space);
+
+	CHECKMAT(_dst, CV_32FC1);
+	dst = (float*)_dst.data;
+	for(i = 0; i < (int)_sst.total(); i++){
+		if(easyclouds[i])
+			dst[i] = NAN;
+	}
+}
+
 int
 main(int argc, char **argv)
 {
@@ -918,10 +948,8 @@ main(int argc, char **argv)
 SAVENC(lat);
 SAVENC(acspo);
 SAVENC(sst);
+SAVENC(cmc);
 SAVENC(albedo);
-	
-	cv_extend::bilateralFilter(sst, bila, 100, 10);
-SAVENC(bila);
 
 	logprintf("computing gradmag, etc....\n");
 	delta = m15 - m16;
@@ -948,6 +976,9 @@ SAVENC(easyclouds);
 
 	//easyfronts = (sst > SST_LOW) & (gradmag > 0.5)
 	//	& (stdf < STD_THRESH) & (lam2 < -0.05);
+
+	bilateral(sst, easyclouds, bila, 3, 200);
+SAVENC(bila);
 
 	logprintf("quantizing sst delta...\n");
 	quantize(lat, sst, delta, omega, anomaly, gradmag, stdf, albedo, acspo, TQ, DQ, OQ, AQ, lut);
