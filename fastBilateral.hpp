@@ -123,13 +123,13 @@ void bilateralFilterImpl(cv::Mat1d src, cv::Mat1d dst,
     const size_t small_width  = static_cast<size_t>((width-1)/sigma_space) + 1 + 2 * padding_xy;
     const size_t small_depth  = static_cast<size_t>((src_max-src_min)/sigma_color) + 1 + 2 * padding_xy;
 
-    int data_size[] = {small_height, small_width, small_depth};
+    int data_size[] = {(int)small_height, (int)small_width, (int)small_depth};
     cv::Mat data(3, data_size, CV_64FC2);
     data.setTo(0);
 
     // down sample
-    for ( int y = 0; y < height; ++y ) {
-        for ( int x = 0; x < width; ++x) {
+    for ( int y = 0; y < (int)height; ++y ) {
+        for ( int x = 0; x < (int)width; ++x) {
             const size_t small_x = static_cast<size_t>( x/sigma_space + 0.5) + padding_xy;
             const size_t small_y = static_cast<size_t>( y/sigma_space + 0.5) + padding_xy;
             const double z = src.at<double>(y,x) - src_min;
@@ -155,11 +155,11 @@ void bilateralFilterImpl(cv::Mat1d src, cv::Mat1d dst,
         for ( int ittr = 0; ittr < 2; ++ittr ) {
             cv::swap(data, buffer);
 
-            for ( int y = 1; y < small_height-1; ++y ) {
-                for ( int x = 1; x < small_width-1; ++x ) {
+            for ( int y = 1; y < (int)(small_height-1); ++y ) {
+                for ( int x = 1; x < (int)(small_width-1); ++x ) {
                     cv::Vec2d *d_ptr = &(data.at<cv::Vec2d>(y,x,1));
                     cv::Vec2d *b_ptr = &(buffer.at<cv::Vec2d>(y,x,1));
-                    for ( int z = 1; z < small_depth-1; ++z, ++d_ptr, ++b_ptr ) {
+                    for ( int z = 1; z < (int)(small_depth-1); ++z, ++d_ptr, ++b_ptr ) {
                         cv::Vec2d b_prev = *(b_ptr-off), b_curr = *b_ptr, b_next = *(b_ptr+off);
                         *d_ptr = (b_prev + b_next + 2.0 * b_curr) / 4.0;
                     } // z
@@ -176,8 +176,8 @@ void bilateralFilterImpl(cv::Mat1d src, cv::Mat1d dst,
         (*d)[0] /= (*d)[1] != 0 ? (*d)[1] : 1;
     }
 
-    for ( int y = 0; y < height; ++y ) {
-        for ( int x = 0; x < width; ++x ) {
+    for ( int y = 0; y < (int)height; ++y ) {
+        for ( int x = 0; x < (int)width; ++x ) {
             const double z = src.at<double>(y,x) - src_min;
             const double px = static_cast<double>(x) / sigma_space + padding_xy;
             const double py = static_cast<double>(y) / sigma_space + padding_xy;

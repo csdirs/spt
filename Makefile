@@ -7,7 +7,7 @@ LDFLAGS = -fopenmp\
 	-lopencv_core\
 	-lopencv_imgproc\
 	-lopencv_flann\
-	-lopencv_highgui
+	-lopencv_highgui\
 
 OFILES = \
 	utils.o\
@@ -20,7 +20,8 @@ OFILES = \
 
 HFILES = spt.h\
 	connectedcomponents.h\
-	
+	fastBilateral.hpp\
+
 
 all: $(TARG)
 
