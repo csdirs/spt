@@ -239,6 +239,11 @@ quantize(int n, Var **src, const Mat &_omega, const Mat &_gradmag,
 			}
 		}
 	}
+	
+	for(k = 0; k < n; k++){
+		dst[k]->min = src[k]->quantize(src[k]->min);
+		dst[k]->max = src[k]->quantize(src[k]->max);
+	}
 }
 
 
@@ -359,7 +364,7 @@ connectedComponentsWithLimit(const Mat &mask, int connectivity, int lim, Mat &_c
 // _feat -- features corresponding to _cclabels (output)
 //
 int
-clusterbin(Size size, int t, int d, const short *tq, const short *dq,
+clusterbin(Size size, int v1, int v2, const short *q1, const short *q2,
 	const float *sst, const float *delta,
 	const float *lat, const float *lon,
 	Mat &_cclabels, Mat &_feat)
@@ -374,7 +379,7 @@ clusterbin(Size size, int t, int d, const short *tq, const short *dq,
 	_mask.create(size, CV_8UC1);
 	mask = (uchar*)_mask.data;
 	for(i = 0; i < (int)_mask.total(); i++)
-		mask[i] = tq[i] == t && dq[i] == d ? 255 : 0;
+		mask[i] = q1[i] == v1 && q2[i] == v2 ? 255 : 0;
 	
 	ncc = connectedComponentsWithLimit(_mask, 4, 200, _cclabels);
 	if(ncc <= 0)
@@ -430,16 +435,16 @@ clusterbin(Size size, int t, int d, const short *tq, const short *dq,
 // _feat -- features (output)
 //
 int
-cluster(const Mat &TQ, const Mat &DQ, const Mat &_lat, const Mat &_lon,
+cluster(QVar *Q1, QVar *Q2, const Mat &_lat, const Mat &_lon,
 	const Mat &_sst, const Mat &_delta,
 	Mat &_glabels, Mat &_feat)
 {
 	int i, glab, *glabels;
 	float *lat, *lon, *sst, *delta, *feat;
-	short *tq, *dq;
+	short *q1, *q2;
 	
-	CHECKMAT(TQ, CV_16SC1);
-	CHECKMAT(DQ, CV_16SC1);
+	CHECKMAT(Q1->mat, CV_16SC1);
+	CHECKMAT(Q2->mat, CV_16SC1);
 	CHECKMAT(_lat, CV_32FC1);
 	CHECKMAT(_lon, CV_32FC1);
 	CHECKMAT(_sst, CV_32FC1);
@@ -448,8 +453,8 @@ cluster(const Mat &TQ, const Mat &DQ, const Mat &_lat, const Mat &_lon,
 	_glabels.create(_sst.size(), CV_32SC1);
 	_feat.create(NFEAT, _sst.total(), CV_32FC1);
 	
-	tq = (short*)TQ.data;
-	dq = (short*)DQ.data;
+	q1 = (short*)Q1->mat.data;
+	q2 = (short*)Q2->mat.data;
 	lat = (float*)_lat.data;
 	lon = (float*)_lon.data;
 	feat = (float*)_feat.data;
@@ -464,13 +469,13 @@ cluster(const Mat &TQ, const Mat &DQ, const Mat &_lat, const Mat &_lon,
 	
 	glab = 0;
 	#pragma omp parallel for
-	for(int t = quantize_sst(SST_LOW); t < quantize_sst(SST_HIGH); t++){
+	for(int v1 = Q1->min; v1 <= Q1->max; v1++){
 		#pragma omp parallel for
-		for(int d = quantize_delta(DELTA_LOW); d < quantize_delta(DELTA_HIGH); d++){
+		for(int v2 = Q2->min; v2 <= Q2->max; v2++){
 			Mat _cclabels;
 			int ncc, lab, *cclabels;
 			
-			ncc = clusterbin(_sst.size(), t, d, tq, dq,
+			ncc = clusterbin(_sst.size(), v1, v2, q1, q2,
 				sst, delta, lat, lon, _cclabels, _feat);
 			CHECKMAT(_cclabels, CV_32SC1);
 			cclabels = (int*)_cclabels.data;
@@ -1153,7 +1158,7 @@ SAVENC(TQ);
 SAVENC(DQ);
 
 	logprintf("computing quantized features...\n");
-	nclust = cluster(TQ, DQ, lat, lon, sst, delta, glabels, feat);
+	nclust = cluster(qoutput[0], qoutput[1], lat, lon, sst, delta, glabels, feat);
 SAVENC(glabels);
 
 	glabels_nn = glabels.clone();
