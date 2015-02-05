@@ -88,18 +88,20 @@ public:
 	};
 	virtual int quantize(float val) = 0;
 	Mat mat;
-	double scale;
 	float min, max;
+	double scalefeat;	// scale feature by
+	bool avgfeat;	// use average for a cluster as feature
 };
 
 class SST : public Var
 {
 public:
 	SST(Mat &m) {
+		mat = m;
 		min = SST_LOW;
 		max = SST_HIGH;
-		scale = 1.0;
-		mat = m;
+		avgfeat = true;
+		scalefeat = 1.0;
 	};
 	int quantize(float val) {
 		return cvRound((val - SST_LOW) * (1.0/TQ_STEP));
@@ -110,10 +112,11 @@ class Delta : public Var
 {
 public:
 	Delta(Mat &m) {
+		mat = m;
 		min = DELTA_LOW;
 		max = DELTA_HIGH;
-		scale = 1.0;
-		mat = m;
+		avgfeat = true;
+		scalefeat = 1.0;
 	};
 	int quantize(float val) {
 		return cvRound((val - DELTA_LOW) * (1.0/DQ_STEP));
@@ -124,10 +127,11 @@ class CMCAnom : public Var
 {
 public:
 	CMCAnom(Mat &m) {
+		mat = m;
 		min = ANOMALY_LOW;
 		max = ANOMALY_HIGH;
-		scale = 1.0;
-		mat = m;
+		avgfeat = true;
+		scalefeat = 1.0;
 	};
 	int quantize(float val) {
 		return cvRound((val - ANOMALY_LOW) * (1.0/AQ_STEP));
@@ -138,10 +142,11 @@ class Lat : public Var
 {
 public:
 	Lat(Mat &m) {
+		mat = m;
 		min = -90;
 		max = 90;
-		scale = 10.0;
-		mat = m;
+		avgfeat = false;
+		scalefeat = 10.0;
 	};
 	int quantize(float val) {
 		float la = abs(val);
@@ -159,10 +164,11 @@ class Lon : public Var
 {
 public:
 	Lon(Mat &m) {
+		mat = m;
 		min = -180;
 		max = 180;
-		scale = 10.0;
-		mat = m;
+		avgfeat = false;
+		scalefeat = 10.0;
 	}
 	int quantize(float val) { abort(); }
 };
@@ -175,17 +181,6 @@ public:
 	int min, max;
 };
 
-int
-quantize_sst(float sst)
-{
-	return cvRound((sst - SST_LOW) * (1.0/TQ_STEP));
-}
-
-int
-quantize_delta(float delta)
-{
-	return cvRound((delta - DELTA_LOW) * (1.0/DQ_STEP));
-}
 
 // Quantize variables.
 //
@@ -350,116 +345,122 @@ connectedComponentsWithLimit(const Mat &mask, int connectivity, int lim, Mat &_c
 	return ncc;
 }
 
-// Run connected component for t == tq and a == aq, and save the features
-// for the connected components in _feat. Returns the number of connected
+// Run connected component for v1 == q1 and v2 == q2, and save the features
+// for the connected components in feat. Returns the number of connected
 // components labeled in _cclabels.
 //
 // size -- size of image
-// t -- quantized SST value
-// d -- quantized delta value
-// tq, dq -- quantized SST, delta images
-// sst, delta -- original SST, delta images
-// lat, lon -- latitude, longitude images
-// _cclabels -- label assigned to pixels where (t == tq && d == dq) (output)
-// _feat -- features corresponding to _cclabels (output)
+// v1, v2 -- quantized values
+// q1, q2 -- quantized images
+// _vars -- variables used as features
+// _cclabels -- label assigned to pixels where (v1 == q1 && v2 == q2) (output)
+// feat -- features corresponding to _cclabels (output)
 //
 int
 clusterbin(Size size, int v1, int v2, const short *q1, const short *q2,
-	const float *sst, const float *delta,
-	const float *lat, const float *lon,
-	Mat &_cclabels, Mat &_feat)
+	Var **_vars, Mat &_cclabels, float *feat)
 {
-	Mat _mask, _count, _avgsst, _avgdelta;
-	double *avgsst, *avgdelta;
-	float *feat_lat, *feat_lon, *feat_sst, *feat_delta;
+	Mat _mask, _count, _avg[NFEAT];
+	double *avg[NFEAT];
+	float *vars[NFEAT];
 	int i, ncc, lab, *cclabels, *count;
 	uchar *mask;
 	
-	// create mask for (t, d)
+	// create mask for (v1, v2) == (q1, q2)
 	_mask.create(size, CV_8UC1);
 	mask = (uchar*)_mask.data;
 	for(i = 0; i < (int)_mask.total(); i++)
 		mask[i] = q1[i] == v1 && q2[i] == v2 ? 255 : 0;
 	
+	// run connected components on the mask
 	ncc = connectedComponentsWithLimit(_mask, 4, 200, _cclabels);
 	if(ncc <= 0)
 		return 0;
-	
 	CHECKMAT(_cclabels, CV_32SC1);
 	cclabels = (int*)_cclabels.data;
 	
+	// allocate temporary matrices for computing average per component
 	_count = Mat::zeros(ncc, 1, CV_32SC1);
-	_avgsst = Mat::zeros(ncc, 1, CV_64FC1);
-	_avgdelta = Mat::zeros(ncc, 1, CV_64FC1);
 	count = (int*)_count.data;
-	avgsst = (double*)_avgsst.data;
-	avgdelta = (double*)_avgdelta.data;
+	for(int k = 0; k < NFEAT; k++){
+		vars[k] = (float*)_vars[k]->mat.data;
+		avg[k] = NULL;
+		if(_vars[k]->avgfeat){
+			_avg[k] = Mat::zeros(ncc, 1, CV_64FC1);
+			avg[k] = (double*)_avg[k].data;
+		}
+	}
 	
 	// compute average per component
 	for(i = 0; i < size.area(); i++){
 		lab = cclabels[i];
-		if(lab >= 0 && !isnan(sst[i]) && !isnan(delta[i])){
-			avgsst[lab] += sst[i];
-			avgdelta[lab] += delta[i];
+		if(lab < 0)
+			continue;
+		bool ok = true;
+		for(int k = 0; k < NFEAT; k++){
+			if(avg[k] && isnan(vars[k][i])){
+				ok = false;
+				break;
+			}
+		}
+		if(ok){
+			for(int k = 0; k < NFEAT; k++){
+				if(avg[k])
+					avg[k][lab] += vars[k][i];
+			}
 			count[lab]++;
 		}
 	}
 	for(lab = 0; lab < ncc; lab++){
-		avgsst[lab] /= count[lab];
-		avgdelta[lab] /= count[lab];
+		for(int k = 0; k < NFEAT; k++){
+			if(avg[k])
+				avg[k][lab] /= count[lab];
+		}
 	}
 
-	feat_lat = (float*)_feat.ptr(FEAT_LAT);
-	feat_lon = (float*)_feat.ptr(FEAT_LON);
-	feat_sst = (float*)_feat.ptr(FEAT_SST);
-	feat_delta = (float*)_feat.ptr(FEAT_DELTA);
-	
+	// compute features for each variables
 	for(i = 0; i < size.area(); i++){
 		lab = cclabels[i];
 		if(lab >= 0){
-			feat_lat[i] = SCALE_LAT(lat[i]);
-			feat_lon[i] = SCALE_LON(lon[i]);
-			feat_sst[i] = SCALE_SST(avgsst[lab]);
-			feat_delta[i] = SCALE_DELTA(avgdelta[lab]);
+			for(int k = 0; k < NFEAT; k++){
+				double scale = _vars[k]->scalefeat;
+				if(avg[k])
+					feat[k] = scale * avg[k][lab];
+				else
+					feat[k] = scale * vars[k][i];
+			}
 		}
+		feat += NFEAT;
 	}
 	return ncc;
 }
 
 // Cluster and find features. Returns the number of clusters labeled in _glabels.
 //
-// TQ, DQ -- quantized SST and delta images
-// _lat, _lon -- latitude, longitude images 
-// _sst, _delta -- SST, delta images
+// Q1, Q2 -- quantized variables
+// vars -- variables used as features
 // _glabels -- global labels (output)
 // _feat -- features (output)
 //
 int
-cluster(QVar *Q1, QVar *Q2, const Mat &_lat, const Mat &_lon,
-	const Mat &_sst, const Mat &_delta,
-	Mat &_glabels, Mat &_feat)
+cluster(QVar *Q1, QVar *Q2, Var **vars, Mat &_glabels, Mat &_feat)
 {
 	int i, glab, *glabels;
-	float *lat, *lon, *sst, *delta, *feat;
+	float *feat;
 	short *q1, *q2;
 	
 	CHECKMAT(Q1->mat, CV_16SC1);
 	CHECKMAT(Q2->mat, CV_16SC1);
-	CHECKMAT(_lat, CV_32FC1);
-	CHECKMAT(_lon, CV_32FC1);
-	CHECKMAT(_sst, CV_32FC1);
-	CHECKMAT(_delta, CV_32FC1);
+	for(int k = 0; k < NFEAT; k++)
+		CHECKMAT(vars[k]->mat, CV_32FC1);
 	
-	_glabels.create(_sst.size(), CV_32SC1);
-	_feat.create(NFEAT, _sst.total(), CV_32FC1);
+	Size size = vars[0]->mat.size();
+	_glabels.create(size, CV_32SC1);
+	_feat.create(size.area(), NFEAT, CV_32FC1);
 	
 	q1 = (short*)Q1->mat.data;
 	q2 = (short*)Q2->mat.data;
-	lat = (float*)_lat.data;
-	lon = (float*)_lon.data;
 	feat = (float*)_feat.data;
-	sst = (float*)_sst.data;
-	delta = (float*)_delta.data;
 	glabels = (int*)_glabels.data;
 	
 	for(i = 0; i < (int)_feat.total(); i++)
@@ -475,8 +476,7 @@ cluster(QVar *Q1, QVar *Q2, const Mat &_lat, const Mat &_lon,
 			Mat _cclabels;
 			int ncc, lab, *cclabels;
 			
-			ncc = clusterbin(_sst.size(), v1, v2, q1, q2,
-				sst, delta, lat, lon, _cclabels, _feat);
+			ncc = clusterbin(size, v1, v2, q1, q2, vars, _cclabels, feat);
 			CHECKMAT(_cclabels, CV_32SC1);
 			cclabels = (int*)_cclabels.data;
 			
@@ -493,7 +493,6 @@ cluster(QVar *Q1, QVar *Q2, const Mat &_lat, const Mat &_lon,
 			}
 		}
 	}
-	transpose(_feat, _feat);
 	return glab;
 }
 
@@ -1158,8 +1157,14 @@ SAVENC(TQ);
 SAVENC(DQ);
 
 	logprintf("computing quantized features...\n");
-	nclust = cluster(qoutput[0], qoutput[1], lat, lon, sst, delta, glabels, feat);
+	Var *vars[NFEAT];
+	vars[FEAT_LAT] = new Lat(lat);
+	vars[FEAT_LON] = new Lon(lon);
+	vars[FEAT_SST] = new SST(sst);
+	vars[FEAT_DELTA] = new Delta(delta);
+	nclust = cluster(qoutput[0], qoutput[1], vars, glabels, feat);
 SAVENC(glabels);
+SAVENC(feat);
 
 	glabels_nn = glabels.clone();
 	nnlabel(feat, lat, lon, sst, delta, easyclouds, gradmag, glabels_nn);
