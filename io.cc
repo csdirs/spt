@@ -74,7 +74,7 @@ readvar(int ncid, const char *name, Mat &img)
 }
 
 void
-savenc(const char *path, Mat &mat)
+savenc(const char *path, const Mat &mat)
 {
 	int i, n, ncid, dims, dimids[MAXDIMS], varid, xtype;
 	char *name;

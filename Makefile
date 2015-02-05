@@ -15,7 +15,6 @@ OFILES = \
 	resample.o\
 	connectedcomponents.o\
 	filters.o\
-	quantize.o\
 	spt.o\
 
 HFILES = spt.h\

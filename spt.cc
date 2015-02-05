@@ -16,8 +16,6 @@ The size of restoration |R| should not be greater than |F|**2
 #include "spt.h"
 #include "fastBilateral.hpp"
 
-#define CHECKMAT(M, T)	CV_Assert((M).type() == (T) && (M).isContinuous())
-
 #define SCALE_LAT(x)	((x) * 10)
 #define SCALE_LON(x)	((x) * 10)
 #define SCALE_SST(x)	(x)
@@ -81,6 +79,168 @@ enum {
 		(v)[1] = ((c)>>8) & 0xFF; \
 		(v)[2] = ((c)>>0) & 0xFF; \
 	}while(0);
+
+class Var	// variable
+{
+public:
+	bool inrange(float val) {
+		return !isnan(val) && min <= val && val <= max;
+	};
+	virtual int quantize(float val) = 0;
+	Mat mat;
+	double scale;
+	float min, max;
+};
+
+class SST : public Var
+{
+public:
+	SST(Mat &m) {
+		min = SST_LOW;
+		max = SST_HIGH;
+		scale = 1.0;
+		mat = m;
+	};
+	int quantize(float val) {
+		return cvRound((val - SST_LOW) * (1.0/TQ_STEP));
+	};
+};
+
+class Delta : public Var
+{
+public:
+	Delta(Mat &m) {
+		min = DELTA_LOW;
+		max = DELTA_HIGH;
+		scale = 1.0;
+		mat = m;
+	};
+	int quantize(float val) {
+		return cvRound((val - DELTA_LOW) * (1.0/DQ_STEP));
+	};
+};
+
+class CMCAnom : public Var
+{
+public:
+	CMCAnom(Mat &m) {
+		min = ANOMALY_LOW;
+		max = ANOMALY_HIGH;
+		scale = 1.0;
+		mat = m;
+	};
+	int quantize(float val) {
+		return cvRound((val - ANOMALY_LOW) * (1.0/AQ_STEP));
+	};
+};
+
+class Lat : public Var
+{
+public:
+	Lat(Mat &m) {
+		min = -90;
+		max = 90;
+		scale = 10.0;
+		mat = m;
+	};
+	int quantize(float val) {
+		float la = abs(val);
+		if(la < 30)
+			return 0;
+		if(la < 45)
+			return 1;
+		if(la < 60)
+			return 2;
+		return 3;
+	};
+};
+
+class Lon : public Var
+{
+public:
+	Lon(Mat &m) {
+		min = -180;
+		max = 180;
+		scale = 10.0;
+		mat = m;
+	}
+	int quantize(float val) { abort(); }
+};
+
+class QVar	// quantized variable
+{
+public:
+	QVar(Mat &m) { mat = m; };
+	Mat mat;
+	int min, max;
+};
+
+int
+quantize_sst(float sst)
+{
+	return cvRound((sst - SST_LOW) * (1.0/TQ_STEP));
+}
+
+int
+quantize_delta(float delta)
+{
+	return cvRound((delta - DELTA_LOW) * (1.0/DQ_STEP));
+}
+
+// Quantize variables.
+//
+// n -- number of variables
+// src -- images of variables (source) that needs to be quantized
+// _omega, _gradmag -- omega and gradient magnitude image
+// dst -- destination where quantized images are stored (output)
+//
+void
+quantize(int n, Var **src, const Mat &_omega, const Mat &_gradmag,
+	QVar **dst)
+{
+	int i, k;
+	bool ok;
+	float *omega, *gm;
+	
+	CV_Assert(n > 0);
+	Size size = src[0]->mat.size();
+	
+	for(k = 0; k < n; k++)
+		CHECKMAT(src[k]->mat, CV_32FC1);
+	for(k = 0; k < n; k++){
+		dst[k]->mat.create(size, CV_16SC1);
+		dst[k]->mat = Scalar(-1);
+	}
+	
+	CHECKMAT(_omega, CV_32FC1);
+	CHECKMAT(_gradmag, CV_32FC1);
+	omega = (float*)_omega.data;
+	gm = (float*)_gradmag.data;
+	
+	// quantize variables
+	for(i = 0; i < (int)size.area(); i++){
+		if(gm[i] > GRAD_LOW		// || delta[i] < -0.5
+		|| (omega[i] < OMEGA_LOW || omega[i] > OMEGA_HIGH))
+			continue;
+		
+		ok = true;
+		for(k = 0; k < n; k++){
+			float *s = (float*)src[k]->mat.data;
+			if(!src[k]->inrange(s[i])){
+				ok = false;
+				break;
+			}
+		}
+		if(ok){
+			for(k = 0; k < n; k++){
+				float *s = (float*)src[k]->mat.data;
+				short *d = (short*)dst[k]->mat.data;
+				d[i] = src[k]->quantize(s[i]);
+			}
+		}
+	}
+}
+
 
 // Return a filename based on granule path path with suffix suf.
 // e.g. savefilename("/foo/bar/qux.nc", ".png") returns "qux.png"
@@ -846,6 +1006,15 @@ get_spt(const Resample *r, const Mat &_acspo, const Mat &_clust,
 	CHECKMAT(_acloud, CV_32FC1);
 	acloud = (float*)_acloud.data;
 	
+	// Copy acspo cloud mask and fronts into spt mask
+	_spt.create(_acspo.size(), CV_8UC1);
+	spt = _spt.data;
+	for(i = 0; i < (int)_acspo.total(); i++){
+		spt[i] = acspo[i] >> MaskCloudOffset;
+		if(fronts[i] == FRONT_OK)
+			spt[i] |= 0x04;
+	}
+	
 	// Create a mask containing the new clear-sky pixels that we may potentially
 	// restore in ACSPO. It consists of pixels that satisfy:
 	// - belongs to a cluster adjacent to a front
@@ -854,7 +1023,7 @@ get_spt(const Resample *r, const Mat &_acspo, const Mat &_clust,
 	// so that the deleted zones doesn't split clusters into smaller ones.
 	_mask.create(_acspo.size(), CV_8UC1);
 	mask = _mask.data;
-	for(i = 0; i < (int)_mask.total(); i++){
+	for(i = 0; i < (int)_acspo.total(); i++){
 		mask[i] = 0;
 		if(clust[i] >= 0 && adjclust[clust[i]] && !isnan(acloud[i]) && acloud[i] > 0)
 			mask[i] = 255;
@@ -867,19 +1036,13 @@ get_spt(const Resample *r, const Mat &_acspo, const Mat &_clust,
 	CHECKMAT(_labels, CV_32SC1);
 	labels = (int*)_labels.data;
 	
-	// Create spt mask containing the fronts and the cloud mask.
-	// We disable small components from being restored as clear-sky.
-	_spt.create(_acspo.size(), CV_8UC1);
-	spt = _spt.data;
-	for(i = 0; i < (int)_labels.total(); i++){
-		spt[i] = acspo[i] >> MaskCloudOffset;
+	// Restored some clear-sky in spt mask.
+	// We disable small components from being restored.
+	for(i = 0; i < (int)_acspo.total(); i++){
 		n = labels[i];
 		if(n > 0 && stats.at<int>(n, CC_STAT_AREA) >= 100
 		&& (acspo[i]&MaskCloud) == MaskCloudSure)
 			spt[i] = MaskCloudClear >> MaskCloudOffset;
-
-		if(fronts[i] == FRONT_OK)
-			spt[i] |= 0x04;
 	}
 }
 
@@ -920,8 +1083,8 @@ int
 main(int argc, char **argv)
 {
 	Mat sst, cmc, bila, anomaly, lat, lon, m14, m15, m16, medf, stdf, blurf,
-		acspo, acspo1, dX, dY, gradmag, delta, omega, albedo, TQ, DQ, OQ, AQ,
-		lut, glabels, glabels_nn, feat, lam1, lam2,
+		acspo, acspo1, dX, dY, gradmag, delta, omega, albedo, TQ, DQ,
+		glabels, glabels_nn, feat, lam1, lam2,
 		easyclouds, easyfronts, fronts, adjclust, spt, spt1, diff;
 	int ncid, n, nclust;
 	char *path;
@@ -981,7 +1144,13 @@ SAVENC(easyclouds);
 SAVENC(bila);
 
 	logprintf("quantizing sst delta...\n");
-	quantize(lat, sst, delta, omega, anomaly, gradmag, stdf, albedo, acspo, TQ, DQ, OQ, AQ, lut);
+	Var *qinput[] = {new SST(sst), new Delta(delta)};
+	QVar *qoutput[] = {new QVar(TQ), new QVar(DQ)};
+	quantize(nelem(qinput), qinput, omega, gradmag, qoutput);
+	TQ = qoutput[0]->mat;
+	DQ = qoutput[1]->mat;
+SAVENC(TQ);
+SAVENC(DQ);
 
 	logprintf("computing quantized features...\n");
 	nclust = cluster(TQ, DQ, lat, lon, sst, delta, glabels, feat);
@@ -1009,9 +1178,10 @@ SAVENC(spt);
 	
 	acspo1 = resample_unsort(r->sind, acspo);
 	diffcloudmask(acspo1, spt1, diff);
+SAVENC(diff);
+	cvtColor(diff, diff, CV_RGB2BGR);
 	resize(diff, diff, Size(), 1/6.0, 1/6.0, INTER_AREA);
 	imwrite("diff.png", diff);
-SAVENC(diff);
 
 	n = nc_close(ncid);
 	if(n != NC_NOERR)

@@ -19,6 +19,7 @@ using namespace cv;
 #define nelem(x) (sizeof(x)/sizeof((x)[0]))
 #define SAVENPY(X)	savenpy(#X ".npy", (X))
 #define SAVENC(X)	if(DEBUG)savenc(#X ".nc", (X))
+#define CHECKMAT(M, T)	CV_Assert((M).type() == (T) && (M).isContinuous())
 
 #define GRAD_THRESH 0.3
 #define GRAD_LOW 0.1
@@ -45,7 +46,7 @@ using namespace cv;
 #define OQ_HIST_STEP OQ_STEP
 
 enum {
-	DEBUG = 0,
+	DEBUG = 1,
 	
 	LUT_INVALID = -1,
 	LUT_OCEAN = 0,
@@ -104,7 +105,7 @@ void	readvar(int ncid, const char *name, Mat&);
 void ncfatal(int n, const char *fmt, ...);
 int open_resampled(const char *path, Resample *r, int omode);
 Mat	readvar_resampled(int ncid, Resample *r, const char *name);
-void	savenc(const char *filename, Mat &mat);
+void	savenc(const char *filename, const Mat &mat);
 void loadnc(const char *filename, Mat &mat);
 
 // npy.cc
@@ -117,14 +118,3 @@ void	nanblur(const Mat &src, Mat &dst, int ksize);
 void	gradientmag(const Mat &src, Mat &dX, Mat &dY, Mat &dst);
 void	localmax(const Mat &gradmag, Mat &high, Mat &low, int sigma);
 void	stdfilter(const Mat &src, Mat &dst, int ksize);
-
-// quantize.cc
-void	quantize(const Mat &_lat, const Mat &_sst, const Mat &_delta,
-	const Mat &_omega, const Mat &_anomaly,
-	const Mat &_gradmag, const Mat &_stdf, Mat &_albedo, Mat &_acspo,
-	Mat &TQ, Mat &DQ, Mat &OQ, Mat &AQ, Mat &lut);
-int	quantize_lat(float lat);
-int	quantize_sst(float sst);
-int	quantize_delta(float delta);
-int	quantize_omega(float omega);
-int	quantize_anomaly(float anomaly);
