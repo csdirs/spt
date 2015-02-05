@@ -16,11 +16,6 @@ The size of restoration |R| should not be greater than |F|**2
 #include "spt.h"
 #include "fastBilateral.hpp"
 
-#define SCALE_LAT(x)	((x) * 10)
-#define SCALE_LON(x)	((x) * 10)
-#define SCALE_SST(x)	(x)
-#define SCALE_DELTA(x)	(x)
-
 // features
 enum {
 	FEAT_LAT,
@@ -543,18 +538,17 @@ remove_inner_feats(Mat &_feat, const Mat &_glabels)
 // Update labels by nearest label training.
 //
 // _feat -- features (rows containing NaNs are removed)
-// _lat, _lon, _sst, _delta -- latitude, longitude, SST, delta images
+// _var -- varibles used to query for nearest neighbor
 // _easyclouds -- easyclouds mask
 // _gradmag -- gradient magnitude
 // _glabels -- global labels (input & output)
 //
 static void
-nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon,
-	const Mat &_sst, const Mat &_delta,
-	const Mat &_easyclouds, const Mat &_gradmag, Mat &_glabels)
+nnlabel(Mat &_feat, Var **_vars, const Mat &_easyclouds,
+	const Mat &_gradmag, Mat &_glabels)
 {
 	int i, k, *indices, *glabels;
-	float *vs, *vd, *lat, *lon, *sst, *delta, *gradmag;
+	float *vs, *vd, *vars[NFEAT], *gradmag;
 	Mat _indices, _labdil;
 	std::vector<float> q(NFEAT), dists(1);
 	std::vector<int> ind(1);
@@ -563,13 +557,11 @@ nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon,
 	
 	CHECKMAT(_feat, CV_32FC1);
 	CV_Assert(_feat.cols == NFEAT);
-	CHECKMAT(_lat, CV_32FC1);
-	CHECKMAT(_lon, CV_32FC1);
-	CHECKMAT(_sst, CV_32FC1);
-	CHECKMAT(_delta, CV_32FC1);
 	CHECKMAT(_easyclouds, CV_8UC1);
 	CHECKMAT(_gradmag, CV_32FC1);
 	CHECKMAT(_glabels, CV_32SC1);
+	for(k = 0; k < NFEAT; k++)
+		CHECKMAT(_vars[k]->mat, CV_32FC1);
 
 	remove_inner_feats(_feat, _glabels);
 	
@@ -589,43 +581,48 @@ nnlabel(Mat &_feat, const Mat &_lat, const Mat &_lon,
 		}
 	}
 	_feat = _feat.rowRange(0, k);
-logprintf("reduced number of features: %d\n", k);
+	logprintf("nnlabel: reduced number of features: %d\n", k);
 	
-	logprintf("building nearest neighbor indices...\n");
+	logprintf("nnlabel: building nearest neighbor indices...\n");
 	flann::Index idx(_feat, flann::KMeansIndexParams(16, 1));
-	logprintf("searching nearest neighbor indices...\n");
+	logprintf("nnlabel: searching nearest neighbor indices...\n");
 	
 	// dilate all the clusters
 	dilate(_glabels >= 0, _labdil, getStructuringElement(MORPH_RECT, Size(21, 21)));
 	CHECKMAT(_labdil, CV_8UC1);
 	
-	lat = (float*)_lat.data;
-	lon = (float*)_lon.data;
-	sst = (float*)_sst.data;
-	delta = (float*)_delta.data;
 	glabels = (int*)_glabels.data;
 	easyclouds = (uchar*)_easyclouds.data;
 	gradmag = (float*)_gradmag.data;
 	labdil = (uchar*)_labdil.data;
-
+	for(k = 0; k < NFEAT; k++)
+		vars[k] = (float*)_vars[k]->mat.data;
+	Size size = _vars[0]->mat.size();
 	
-	for(i = 0; i < (int)_sst.total(); i++){
-		if(labdil[i] && glabels[i] < 0	// regions added by dilation
-		&& easyclouds[i] == 0
-		&& !isnan(sst[i]) && !isnan(delta[i])
-		&& (gradmag[i] > GRAD_LOW || glabels[i] == COMP_SPECKLE)
-		&& SST_LOW < sst[i] && sst[i] < SST_HIGH
-		&& DELTA_LOW < delta[i] && delta[i] < DELTA_HIGH){
-			q[FEAT_LAT] = SCALE_LAT(lat[i]);
-			q[FEAT_LON] = SCALE_LON(lon[i]);
-			q[FEAT_SST] = SCALE_SST(sst[i]);
-			q[FEAT_DELTA] = SCALE_DELTA(delta[i]);
+	// label based on nearest neighbor
+	for(i = 0; i < (int)size.area(); i++){
+		if(!labdil[i] || glabels[i] >= 0	// not regions added by dilation
+		|| easyclouds[i]
+		|| (gradmag[i] < GRAD_LOW && glabels[i] != COMP_SPECKLE))
+			continue;
+		
+		bool ok = true;
+		for(k = 0; k < NFEAT; k++){
+			if(!_vars[k]->inrange(vars[k][i])){
+				ok = false;
+				break;
+			}
+		}
+		if(ok){
+			for(k = 0; k < NFEAT; k++){
+				q[k] = _vars[k]->scalefeat * vars[k][i];
+			}
 			idx.knnSearch(q, ind, dists, 1, sparam);
 			if(dists[0] < 5)
 				glabels[i] = glabels[indices[ind[0]]];
 		}
 	}
-logprintf("done searching nearest neighbors\n");
+	logprintf("nnlabel: done searching nearest neighbors\n");
 
 	// TODO: erode glabels by 21, but not where gradmag < GRAD_LOW
 }
@@ -1167,7 +1164,7 @@ SAVENC(glabels);
 SAVENC(feat);
 
 	glabels_nn = glabels.clone();
-	nnlabel(feat, lat, lon, sst, delta, easyclouds, gradmag, glabels_nn);
+	nnlabel(feat, vars, easyclouds, gradmag, glabels_nn);
 SAVENC(glabels_nn);
 	
 	logprintf("finding thermal fronts...\n");
