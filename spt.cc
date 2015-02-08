@@ -111,7 +111,7 @@ public:
 		min = DELTA_LOW;
 		max = DELTA_HIGH;
 		avgfeat = true;
-		scalefeat = 1.0;
+		scalefeat = 5.0;
 	};
 	int quantize(float val) {
 		return cvRound((val - DELTA_LOW) * (1.0/DQ_STEP));
@@ -132,6 +132,22 @@ public:
 		return cvRound((val - ANOMALY_LOW) * (1.0/AQ_STEP));
 	};
 };
+
+class BilAnom : public Var
+{
+public:
+	BilAnom(Mat &m) {
+		mat = m;
+		min = -999;
+		max = 999;
+		avgfeat = true;
+		scalefeat = 1.0;
+	};
+	int quantize(float val) {
+		return val <= 0 ? 0 : 1;
+	};
+};
+
 
 class Lat : public Var
 {
@@ -186,11 +202,11 @@ public:
 //
 void
 quantize(int n, Var **src, const Mat &_omega, const Mat &_gradmag,
-	QVar **dst)
+	const Mat &_deltamag, QVar **dst)
 {
 	int i, k;
 	bool ok;
-	float *omega, *gm;
+	float *omega, *gm, *deltamag;
 	
 	CV_Assert(n > 0);
 	Size size = src[0]->mat.size();
@@ -204,12 +220,15 @@ quantize(int n, Var **src, const Mat &_omega, const Mat &_gradmag,
 	
 	CHECKMAT(_omega, CV_32FC1);
 	CHECKMAT(_gradmag, CV_32FC1);
+	CHECKMAT(_deltamag, CV_32FC1);
 	omega = (float*)_omega.data;
 	gm = (float*)_gradmag.data;
+	deltamag = (float*)_deltamag.data;
 	
 	// quantize variables
 	for(i = 0; i < (int)size.area(); i++){
 		if(gm[i] > GRAD_LOW		// || delta[i] < -0.5
+		|| deltamag[i] > DELTAMAG_LOW
 		|| (omega[i] < OMEGA_LOW || omega[i] > OMEGA_HIGH))
 			continue;
 		
@@ -1071,6 +1090,11 @@ bilateral(const Mat &_sst, const Mat &_easyclouds, Mat &_dst, double sigma_color
 	}
 if(DEBUG)savenc("bilasrc.nc", _src);
 	cv_extend::bilateralFilter(_src, _dst, sigma_color, sigma_space);
+	// TODO:
+	// Image_filter::linear_BF(image,
+	// 		  sigma_s=200,sigma_r=4,
+	// 		  sampling_s=50,sampling_r=1,
+	// 		  &filtered_image);
 
 	CHECKMAT(_dst, CV_32FC1);
 	dst = (float*)_dst.data;
@@ -1083,8 +1107,8 @@ if(DEBUG)savenc("bilasrc.nc", _src);
 int
 main(int argc, char **argv)
 {
-	Mat sst, cmc, bila, anomaly, lat, lon, m14, m15, m16, medf, stdf, blurf,
-		acspo, acspo1, dX, dY, gradmag, delta, omega, albedo, TQ, DQ,
+	Mat sst, cmc, bil, anomaly, lat, lon, m14, m15, m16, medf, stdf, blurf,
+		acspo, acspo1, dX, dY, gradmag, delta, omega, albedo, BQ, DQ,
 		glabels, glabels_nn, feat, lam1, lam2,
 		easyclouds, easyfronts, fronts, adjclust, spt, spt1, diff;
 	int ncid, n, nclust;
@@ -1128,6 +1152,10 @@ SAVENC(omega);
 SAVENC(anomaly);
 SAVENC(gradmag);
 SAVENC(lam2);
+	
+	Mat tmp1, tmp2, deltamag;
+	gradientmag(delta, tmp1, tmp2, deltamag);
+SAVENC(deltamag);
 
 	medianBlur(sst, medf, 5);
 	stdfilter(sst-medf, stdf, 7);
@@ -1141,16 +1169,18 @@ SAVENC(easyclouds);
 	//easyfronts = (sst > SST_LOW) & (gradmag > 0.5)
 	//	& (stdf < STD_THRESH) & (lam2 < -0.05);
 
-	bilateral(sst, easyclouds, bila, 3, 200);
-SAVENC(bila);
+	bilateral(sst, easyclouds, bil, 3, 200);
+SAVENC(bil);
+
+	Mat bilanom = sst-bil;
 
 	logprintf("quantizing sst delta...\n");
-	Var *qinput[] = {new SST(sst), new Delta(delta)};
-	QVar *qoutput[] = {new QVar(TQ), new QVar(DQ)};
-	quantize(nelem(qinput), qinput, omega, gradmag, qoutput);
-	TQ = qoutput[0]->mat;
+	Var *qinput[] = {new BilAnom(bilanom), new Delta(delta)};
+	QVar *qoutput[] = {new QVar(BQ), new QVar(DQ)};
+	quantize(nelem(qinput), qinput, omega, gradmag, deltamag, qoutput);
+	BQ = qoutput[0]->mat;
 	DQ = qoutput[1]->mat;
-SAVENC(TQ);
+SAVENC(BQ);
 SAVENC(DQ);
 
 	logprintf("computing quantized features...\n");

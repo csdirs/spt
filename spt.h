@@ -21,8 +21,9 @@ using namespace cv;
 #define SAVENC(X)	if(DEBUG)savenc(#X ".nc", (X))
 #define CHECKMAT(M, T)	CV_Assert((M).type() == (T) && (M).isContinuous())
 
-#define GRAD_THRESH 0.3
+#define GRAD_THRESH 0.2
 #define GRAD_LOW 0.1
+#define DELTAMAG_LOW (GRAD_LOW/2.0)
 #define SST_LOW 270
 #define SST_HIGH 309
 #define DELTA_LOW -1
@@ -37,7 +38,7 @@ using namespace cv;
 #define STD_THRESH 0.5
 
 #define TQ_STEP 1
-#define DQ_STEP 0.2
+#define DQ_STEP 0.5
 #define OQ_STEP 0.5
 #define AQ_STEP 1
 
