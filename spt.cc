@@ -15,6 +15,7 @@ The size of restoration |R| should not be greater than |F|**2
 
 #include "spt.h"
 #include "fastBilateral.hpp"
+#include "linear_bf.h"
 
 // features
 enum {
@@ -1067,40 +1068,63 @@ get_spt(const Resample *r, const Mat &_acspo, const Mat &_clust,
 }
 
 void
-bilateral(const Mat &_sst, const Mat &_easyclouds, Mat &_dst, double sigma_color, double sigma_space)
+sstbilateral(const Mat &_sst, const Mat &_easyclouds, Mat &_bil)
 {
-	int i;
-	Mat _src;
-	float *sst, *src, *dst;
+	typedef Array_2D<float> Image;
+	int i, x, y;
+	float *sst, *bil;
 	uchar *easyclouds;
 
 	CHECKMAT(_easyclouds, CV_8UC1);
 	CHECKMAT(_sst, CV_32FC1);
-	_src = _sst.clone();	// TODO: copy necessary here?
-	
+	_bil.create(_sst.size(), CV_32FC1);
 	easyclouds = _easyclouds.data;
 	sst = (float*)_sst.data;
-	src = (float*)_src.data;
+	bil = (float*)_bil.data;
 	
-	for(i = 0; i < (int)_sst.total(); i++){
-		if(easyclouds[i])
-			src[i] = -1;
-		else if(sst[i] > SST_HIGH)
-			src[i] = SST_HIGH;
+	Image src(_sst.rows, _sst.cols);
+	Image dst(_sst.rows, _sst.cols);
+	
+	// Create input image.
+	i = 0;
+	for(y = 0; y < _sst.rows; y++){
+		for(x = 0; x < _sst.cols; x++){
+			if(easyclouds[i] || isnan(sst[i]))
+				src(y,x) = -1;
+			else if(sst[i] > SST_HIGH)
+				src(y,x) = SST_HIGH;
+			else
+				src(y,x) = sst[i];
+			i++;
+		}
 	}
-if(DEBUG)savenc("bilasrc.nc", _src);
-	cv_extend::bilateralFilter(_src, _dst, sigma_color, sigma_space);
-	// TODO:
-	// Image_filter::linear_BF(image,
-	// 		  sigma_s=200,sigma_r=4,
-	// 		  sampling_s=50,sampling_r=1,
-	// 		  &filtered_image);
+	if(false){
+		Mat tmp = Mat::zeros(_sst.size(), CV_32FC1);
+		for(y = 0; y < _sst.rows; y++){
+			for(x = 0; x < _sst.cols; x++)
+				tmp.at<float>(y, x) = src(y, x);
+		}
+		savenc("bilinput.nc", tmp);
+	}
+	
+	// Run bilateral filter.
+	logprintf("running bilinear filter...\n");
+	Image_filter::linear_BF(src,
+		/*space_sigma*/ 200, /*range_sigma*/ 4,
+		/*space_sampling*/ 50, /*range_sampling*/ 1,
+		&dst);
+	logprintf("bilinear filter done\n");
 
-	CHECKMAT(_dst, CV_32FC1);
-	dst = (float*)_dst.data;
-	for(i = 0; i < (int)_sst.total(); i++){
-		if(easyclouds[i])
-			dst[i] = NAN;
+	// Copy output image.
+	i = 0;
+	for(y = 0; y < _sst.rows; y++){
+		for(x = 0; x < _sst.cols; x++){
+			if(easyclouds[i] || isnan(sst[i]))
+				bil[i] = NAN;
+			else
+				bil[i] = dst(y,x);
+			i++;
+		}
 	}
 }
 
@@ -1169,7 +1193,7 @@ SAVENC(easyclouds);
 	//easyfronts = (sst > SST_LOW) & (gradmag > 0.5)
 	//	& (stdf < STD_THRESH) & (lam2 < -0.05);
 
-	bilateral(sst, easyclouds, bil, 3, 200);
+	sstbilateral(sst, easyclouds, bil);
 SAVENC(bil);
 
 	Mat bilanom = sst-bil;
