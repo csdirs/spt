@@ -38,6 +38,7 @@
 
 #include <sstream>
 #include <string>
+#include <cstring>
 
 #include "fftw3.h"
 

@@ -105,7 +105,7 @@ namespace Image_filter{
 
     using namespace std;
 
-    typedef Array               real_array_2D_type;
+    //typedef Array               real_array_2D_type;
     typedef Array_3D<real_type> real_array_3D_type;
     
     const size_type width  = input.x_size();
