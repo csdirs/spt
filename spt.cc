@@ -12,6 +12,12 @@ The size of restoration |R| should not be greater than |F|**2
 
 */
 
+/*
+TODO:
+	7x7 window for pixels not in easycloud & gradmag > 0.5
+	on the bilateral anomaly image
+	#positive/total > 0.3  & #negative/total > 0.3
+*/
 
 #include "spt.h"
 #include "fastBilateral.hpp"
@@ -745,6 +751,7 @@ compute_spt_mask(Mat &_acspo, Mat &_labels, Mat &_spt)
 //	f(x) = 1.0/(1+exp(100*(x+0.01)))
 //	g(x) = 1.0/(1+exp(-30*(x-0.15)))
 //	h(x) = 1.0/(1+exp(30*(x-0.15)))
+//	q(x) = 1.0/(1+exp(100*(x-0.05)))
 //	prod1 = f(lam2)*g(gradmag)*h(stdf)
 //	prod2 = f(lam2)*clip(gradmag, 0, 1)
 //
@@ -764,12 +771,12 @@ compute_spt_mask(Mat &_acspo, Mat &_labels, Mat &_spt)
 //
 void
 thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
-	const Mat &_glabels, const Mat &_glabels_nn,
+	const Mat &_deltamag, const Mat &_glabels, const Mat &_glabels_nn,
 	const Mat &easyclouds, Mat &_fronts)
 {
-	Mat _dilc;
-	float *lam2, *gradmag, *stdf;
-	double m, llam, lmag, lstdf;
+	Mat _dilc, _dilq;
+	float *lam2, *gradmag, *stdf, *deltamag, *dilq;
+	double m, llam, lmag, lstdf, ldel;
 	int i, *glabels, *glabels_nn;
 	uchar *dilc;
 	schar *fronts;
@@ -777,6 +784,7 @@ thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 	CHECKMAT(_lam2, CV_32FC1);
 	CHECKMAT(_gradmag, CV_32FC1);
 	CHECKMAT(_stdf, CV_32FC1);
+	CHECKMAT(_deltamag, CV_32FC1);
 	CHECKMAT(_glabels, CV_32SC1);
 	CHECKMAT(_glabels_nn, CV_32SC1);
 	CHECKMAT(easyclouds, CV_8UC1);
@@ -785,6 +793,7 @@ thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 	lam2 = (float*)_lam2.data;
 	gradmag = (float*)_gradmag.data;
 	stdf = (float*)_stdf.data;
+	deltamag = (float*)_deltamag.data;
 	glabels = (int*)_glabels.data;
 	glabels_nn = (int*)_glabels_nn.data;
 	fronts = (schar*)_fronts.data;
@@ -793,7 +802,15 @@ thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 	dilate(easyclouds, _dilc, getStructuringElement(MORPH_RECT, Size(7, 7)));
 	CHECKMAT(_dilc, CV_8UC1);
 	dilc = _dilc.data;
-	
+	if(DEBUG) savenc("dilc.nc", _dilc);
+/*	
+	_dilq = 100*(_deltamag - 0.05);
+	exp(_dilq, _dilq);
+	erode(1.0/(1+_dilq) > 0.5, _dilq, getStructuringElement(MORPH_RECT, Size(7, 7)));
+	if(DEBUG) savenc("dilq.nc", _dilq);
+	CHECKMAT(_dilq, CV_32FC1);
+	dilq = (float*)_dilq.data;
+*/
 	// compute thermal fronts image
 	for(i = 0; i < (int)_glabels.total(); i++){
 		fronts[i] = FRONT_INVALID;
@@ -805,10 +822,11 @@ thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 		
 		// it's front if logit'(lam2) * clip(gradmag, 0, 1) > 0.5
 		llam = 1.0/(1+exp(100*(lam2[i]+0.01)));
+		ldel = 1.0/(1+exp(100*(deltamag[i]-0.05)));
 		m = gradmag[i];
 		if(m > 1)
 			m = 1;
-		if(llam*m > 0.5){
+		if(llam*ldel*m > 0.5){
 			fronts[i] = FRONT_INIT;
 			continue;
 		}
@@ -816,7 +834,8 @@ thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 		// it's front if logit'(lam2)*logit''(stdf)*logit'''(stdf) > 0.5
 		lmag = 1.0/(1+exp(-30*(gradmag[i]-0.15)));
 		lstdf = 1.0/(1+exp(30*(stdf[i]-0.15)));
-		if(llam*lmag*lstdf > 0.5)
+		ldel = 1.0/(1+exp(100*(deltamag[i]-0.1)));
+		if(llam*lmag*lstdf*ldel > 0.5)
 			fronts[i] = FRONT_INIT;
 	}
 }
@@ -1172,6 +1191,10 @@ SAVENC(easyclouds);
 	bilateral(sst, easyclouds, bil, 3, 200);
 SAVENC(bil);
 
+	Mat delbil;
+	bilateral(delta, easyclouds, delbil, 0.5, 200);
+SAVENC(delbil);
+	
 	Mat bilanom = sst-bil;
 
 	logprintf("quantizing sst delta...\n");
@@ -1198,7 +1221,7 @@ SAVENC(feat);
 SAVENC(glabels_nn);
 	
 	logprintf("finding thermal fronts...\n");
-	thermal_fronts(lam2, gradmag, stdf, glabels, glabels_nn, easyclouds, fronts);
+	thermal_fronts(lam2, gradmag, stdf, deltamag, glabels, glabels_nn, easyclouds, fronts);
 
 	logprintf("finding clusters adjacent to fronts...\n");
 	find_adjclust(dY, dX, gradmag, nclust, glabels_nn, acspo, 5, fronts, adjclust);

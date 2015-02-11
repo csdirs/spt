@@ -38,7 +38,7 @@ using namespace cv;
 #define STD_THRESH 0.5
 
 #define TQ_STEP 1
-#define DQ_STEP 0.5
+#define DQ_STEP 0.2	// 0.5 doesn't work on some examples
 #define OQ_STEP 0.5
 #define AQ_STEP 1
 
