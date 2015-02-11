@@ -12,13 +12,6 @@ The size of restoration |R| should not be greater than |F|**2
 
 */
 
-/*
-TODO:
-	7x7 window for pixels not in easycloud & gradmag > 0.5
-	on the bilateral anomaly image
-	#positive/total > 0.3  & #negative/total > 0.3
-*/
-
 #include "spt.h"
 #include "fastBilateral.hpp"
 
@@ -775,7 +768,7 @@ thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 	const Mat &easyclouds, Mat &_fronts)
 {
 	Mat _dilc, _dilq;
-	float *lam2, *gradmag, *stdf, *deltamag, *dilq;
+	float *lam2, *gradmag, *stdf, *deltamag;
 	double m, llam, lmag, lstdf, ldel;
 	int i, *glabels, *glabels_nn;
 	uchar *dilc;
@@ -802,9 +795,8 @@ thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 	dilate(easyclouds, _dilc, getStructuringElement(MORPH_RECT, Size(7, 7)));
 	CHECKMAT(_dilc, CV_8UC1);
 	dilc = _dilc.data;
-	if(DEBUG) savenc("dilc.nc", _dilc);
 /*	
-	_dilq = 100*(_deltamag - 0.05);
+	float *_dilq = 100*(_deltamag - 0.05);
 	exp(_dilq, _dilq);
 	erode(1.0/(1+_dilq) > 0.5, _dilq, getStructuringElement(MORPH_RECT, Size(7, 7)));
 	if(DEBUG) savenc("dilq.nc", _dilq);
@@ -1107,13 +1099,9 @@ bilateral(const Mat &_sst, const Mat &_easyclouds, Mat &_dst, double sigma_color
 		else if(sst[i] > SST_HIGH)
 			src[i] = SST_HIGH;
 	}
-if(DEBUG)savenc("bilasrc.nc", _src);
+	// TODO: check if OpenCV's bilateralFilter is fast enough for us
+	// and can replace this function.
 	cv_extend::bilateralFilter(_src, _dst, sigma_color, sigma_space);
-	// TODO:
-	// Image_filter::linear_BF(image,
-	// 		  sigma_s=200,sigma_r=4,
-	// 		  sampling_s=50,sampling_r=1,
-	// 		  &filtered_image);
 
 	CHECKMAT(_dst, CV_32FC1);
 	dst = (float*)_dst.data;
@@ -1123,12 +1111,43 @@ if(DEBUG)savenc("bilasrc.nc", _src);
 	}
 }
 
+void
+plusminus(const Mat &_src, const Mat &easyclouds, const Mat &gradmag, Mat &_dst)
+{
+	Mat _tmp;
+	float *src, *tmp;
+	
+	CHECKMAT(_src, CV_32FC1);
+	CHECKMAT(easyclouds, CV_8UC1);
+	CHECKMAT(gradmag, CV_32FC1);
+	_tmp.create(_src.size(), CV_32FC1);
+	
+	src = (float*)_src.data;
+	tmp = (float*)_tmp.data;
+	
+	// run box filter on image containing (-1, 1, 99)
+	for(int i = 0; i < (int)_src.total(); i++){
+		if(isnan(src[i]))
+			tmp[i] = 999;
+		else if(src[i] < 0)
+			tmp[i] = -1;
+		else
+			tmp[i] = 1;
+	}
+	boxFilter(_tmp, _tmp, -1, Size(7,7), Point(-1,-1), false);
+	if(DEBUG) savenc("apmsum.nc", _tmp);
+	
+	// create output mask based on box filter output
+	_dst = (easyclouds==0) & (gradmag > 0.5)
+		& (-15 <= _tmp) & (_tmp <= 15);
+}
+
 int
 main(int argc, char **argv)
 {
 	Mat sst, cmc, bil, anomaly, lat, lon, m14, m15, m16, medf, stdf, blurf,
 		acspo, acspo1, dX, dY, gradmag, delta, omega, albedo, BQ, DQ,
-		glabels, glabels_nn, feat, lam1, lam2,
+		glabels, glabels_nn, feat, lam1, lam2, apm,
 		easyclouds, easyfronts, fronts, adjclust, spt, spt1, diff;
 	int ncid, n, nclust;
 	char *path;
@@ -1152,7 +1171,6 @@ main(int argc, char **argv)
 	m16 = readvar_resampled(ncid, r, "brightness_temp_chM16");
 	albedo = readvar_resampled(ncid, r, "albedo_chM7");
 
-SAVENC(lat);
 SAVENC(acspo);
 SAVENC(sst);
 SAVENC(cmc);
@@ -1196,6 +1214,10 @@ SAVENC(bil);
 SAVENC(delbil);
 	
 	Mat bilanom = sst-bil;
+	
+	logprintf("running plus/minus...\n");
+	plusminus(bilanom, easyclouds, gradmag, apm);
+SAVENC(apm);
 
 	logprintf("quantizing sst delta...\n");
 	Var *qinput[] = {new BilAnom(bilanom), new Delta(delta)};
@@ -1203,8 +1225,6 @@ SAVENC(delbil);
 	quantize(nelem(qinput), qinput, omega, gradmag, deltamag, qoutput);
 	BQ = qoutput[0]->mat;
 	DQ = qoutput[1]->mat;
-SAVENC(BQ);
-SAVENC(DQ);
 
 	logprintf("computing quantized features...\n");
 	Var *vars[NFEAT];
@@ -1214,7 +1234,6 @@ SAVENC(DQ);
 	vars[FEAT_DELTA] = new Delta(delta);
 	nclust = cluster(qoutput[0], qoutput[1], vars, glabels, feat);
 SAVENC(glabels);
-SAVENC(feat);
 
 	glabels_nn = glabels.clone();
 	nnlabel(feat, vars, easyclouds, gradmag, glabels_nn);
@@ -1226,7 +1245,6 @@ SAVENC(glabels_nn);
 	logprintf("finding clusters adjacent to fronts...\n");
 	find_adjclust(dY, dX, gradmag, nclust, glabels_nn, acspo, 5, fronts, adjclust);
 SAVENC(fronts);
-SAVENC(adjclust);
 
 	logprintf("creating spt mask...\n");
 	get_spt(r, acspo, glabels_nn, adjclust, fronts, spt);
