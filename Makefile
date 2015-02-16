@@ -1,15 +1,23 @@
-TARG = spt
+SPT = spt
+CMDIFF = cmdiff
 CXX = g++
 CXXFLAGS = -g -Wall -Wfatal-errors -march=native -O2 -fopenmp
 LD = g++
-LDFLAGS = -fopenmp\
+LDFLAGS_SPT =\
+	-fopenmp\
 	-lnetcdf\
 	-lopencv_core\
 	-lopencv_imgproc\
 	-lopencv_flann\
 	-lopencv_highgui\
 
-OFILES = \
+LDFLAGS_CMDIFF =\
+	-lnetcdf\
+	-lopencv_core\
+	-lopencv_imgproc\
+	-lopencv_highgui\
+
+OFILES_SPT = \
 	utils.o\
 	io.o\
 	resample.o\
@@ -17,18 +25,28 @@ OFILES = \
 	filters.o\
 	spt.o\
 
-HFILES = spt.h\
+OFILES_CMDIFF =\
+	utils.o\
+	io.o\
+	resample.o\
+	cmdiff.o\
+
+HFILES =\
+	spt.h\
 	connectedcomponents.h\
 	fastBilateral.hpp\
 
 
-all: $(TARG)
+all: $(SPT) $(CMDIFF)
 
-$(TARG): $(OFILES)
-	$(LD) -o $(TARG) $(OFILES) $(LDFLAGS)
+$(SPT): $(OFILES_SPT)
+	$(LD) -o $(SPT) $(OFILES_SPT) $(LDFLAGS_SPT)
+
+$(CMDIFF): $(OFILES_CMDIFF)
+	$(LD) -o $(CMDIFF) $(OFILES_CMDIFF) $(LDFLAGS_CMDIFF)
 
 %.o: %.cc $(HFILES)
 	$(CXX) -c $(CXXFLAGS) $<
 
 clean:
-	rm -f $(TARG) $(OFILES)
+	rm -f $(TARG) $(OFILES_SPT) $(OFILES_CMDIFF)

@@ -97,8 +97,7 @@ void logprintf(const char *fmt, ...);
 char* estrdup(const char *s);
 void *emalloc(size_t n);
 const char *type2str(int type);
-void gray2rgb(Mat &src, Mat &dst, int cmap);
-void cmapimshow(string name, Mat &img, int cmap);
+void diffcloudmask(const Mat &_old, const Mat &_new, Mat &_rgb);
 
 // io.cc
 char	*fileprefix(const char *path);

@@ -1,9 +1,10 @@
 spt
-saveresampled
+cmdiff
 lut
 tags
 guide
 loaddata.py
+run.sh
 *.o
 *.nc
 *.png
