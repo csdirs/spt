@@ -765,13 +765,13 @@ compute_spt_mask(Mat &_acspo, Mat &_labels, Mat &_spt)
 void
 thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 	const Mat &_deltamag, const Mat &_glabels, const Mat &_glabels_nn,
-	const Mat &easyclouds, Mat &_fronts)
+	const Mat &easyclouds, const Mat &_apm, Mat &_fronts)
 {
 	Mat _dilc, _dilq;
 	float *lam2, *gradmag, *stdf, *deltamag;
 	double m, llam, lmag, lstdf, ldel;
 	int i, *glabels, *glabels_nn;
-	uchar *dilc;
+	uchar *dilc, *apm;
 	schar *fronts;
 	
 	CHECKMAT(_lam2, CV_32FC1);
@@ -781,6 +781,7 @@ thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 	CHECKMAT(_glabels, CV_32SC1);
 	CHECKMAT(_glabels_nn, CV_32SC1);
 	CHECKMAT(easyclouds, CV_8UC1);
+	CHECKMAT(_apm, CV_8UC1);
 	_fronts.create(_glabels.size(), CV_8SC1);
 	
 	lam2 = (float*)_lam2.data;
@@ -790,6 +791,7 @@ thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 	glabels = (int*)_glabels.data;
 	glabels_nn = (int*)_glabels_nn.data;
 	fronts = (schar*)_fronts.data;
+	apm = _apm.data;
 	
 	// dilate easyclouds
 	dilate(easyclouds, _dilc, getStructuringElement(MORPH_RECT, Size(7, 7)));
@@ -811,13 +813,19 @@ thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 		// or not in domain added by nearest neighbor
 		if(dilc[i] || glabels_nn[i] < 0 || glabels[i] >= 0)
 			continue;
+
+		if(apm[i] && gradmag[i] > 0.1 && gradmag[i]/deltamag[i] > 10){
+			fronts[i] = FRONT_INIT;
+			continue;
+		}
 		
 		// it's front if logit'(lam2) * clip(gradmag, 0, 1) > 0.5
 		llam = 1.0/(1+exp(100*(lam2[i]+0.01)));
 		ldel = 1.0/(1+exp(100*(deltamag[i]-0.05)));
 		m = gradmag[i];
-		if(m > 1)
+		if(m > 1){
 			m = 1;
+		}
 		if(llam*ldel*m > 0.5){
 			fronts[i] = FRONT_INIT;
 			continue;
@@ -937,19 +945,25 @@ find_adjclust(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 	for(i = 0; i < nfront; i++){
 		fs = &fstats[NFSTAT * i];
 		t = 0.7*fs[FSTAT_SIZE];
-		fs[FSTAT_OK] = fs[FSTAT_LSIZE] > t && fs[FSTAT_RSIZE] > t
-			&& fs[FSTAT_SUMMAG]/fs[FSTAT_SIZE] > GRAD_THRESH;
+		fs[FSTAT_OK] = fs[FSTAT_LSIZE] > t && fs[FSTAT_RSIZE] > t;
+			//&& fs[FSTAT_SUMMAG]/fs[FSTAT_SIZE] > GRAD_THRESH;
 		
 		if(!fs[FSTAT_OK])
 			continue;
 		
 		for(j = 0; j < nclust; j++){
+			bool inleft = false;
+			bool inright = false;
+			
 			p = (int*)leftcount.ptr(i, j, false);
 			if(p && *p/(double)fs[FSTAT_LSIZE] > 0.3)
-				adjclust[j] = 255;
+				inleft = true;
 
 			p = (int*)rightcount.ptr(i, j, false);
 			if(p && *p/(double)fs[FSTAT_RSIZE] > 0.3)
+				inright = true;
+			
+			if((inleft && !inright) || (!inleft && inright))
 				adjclust[j] = 255;
 		}
 	}
@@ -1112,15 +1126,20 @@ bilateral(const Mat &_sst, const Mat &_easyclouds, Mat &_dst, double sigma_color
 }
 
 void
-plusminus(const Mat &_src, const Mat &easyclouds, const Mat &gradmag, Mat &_dst)
+plusminus(const Mat &_src, const Mat &gradmag, Mat &_dst)
 {
 	Mat _tmp;
 	float *src, *tmp;
 	
 	CHECKMAT(_src, CV_32FC1);
-	CHECKMAT(easyclouds, CV_8UC1);
 	CHECKMAT(gradmag, CV_32FC1);
 	_tmp.create(_src.size(), CV_32FC1);
+	
+	enum {
+		WSIZE = 11,
+	};
+	
+	const double THRESH = 0.3*WSIZE*WSIZE;
 	
 	src = (float*)_src.data;
 	tmp = (float*)_tmp.data;
@@ -1134,12 +1153,11 @@ plusminus(const Mat &_src, const Mat &easyclouds, const Mat &gradmag, Mat &_dst)
 		else
 			tmp[i] = 1;
 	}
-	boxFilter(_tmp, _tmp, -1, Size(7,7), Point(-1,-1), false);
+	boxFilter(_tmp, _tmp, -1, Size(WSIZE,WSIZE), Point(-1,-1), false);
 	if(DEBUG) savenc("apmsum.nc", _tmp);
 	
 	// create output mask based on box filter output
-	_dst = (easyclouds==0) & (gradmag > 0.5)
-		& (-15 <= _tmp) & (_tmp <= 15);
+	_dst = (-THRESH <= _tmp) & (_tmp <= THRESH);
 }
 
 int
@@ -1216,7 +1234,7 @@ SAVENC(delbil);
 	Mat bilanom = sst-bil;
 	
 	logprintf("running plus/minus...\n");
-	plusminus(bilanom, easyclouds, gradmag, apm);
+	plusminus(bilanom, gradmag, apm);
 SAVENC(apm);
 
 	logprintf("quantizing sst delta...\n");
@@ -1240,7 +1258,7 @@ SAVENC(glabels);
 SAVENC(glabels_nn);
 	
 	logprintf("finding thermal fronts...\n");
-	thermal_fronts(lam2, gradmag, stdf, deltamag, glabels, glabels_nn, easyclouds, fronts);
+	thermal_fronts(lam2, gradmag, stdf, deltamag, glabels, glabels_nn, easyclouds, apm, fronts);
 
 	logprintf("finding clusters adjacent to fronts...\n");
 	find_adjclust(dY, dX, gradmag, nclust, glabels_nn, acspo, 5, fronts, adjclust);
