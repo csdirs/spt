@@ -5,8 +5,12 @@
 #include "spt.h"
 
 // Compute the laplacian filter of image src into dst.
+//
+// src -- source image
+// dst -- destination image (output)
+//
 void
-laplacian(Mat &src, Mat &dst)
+laplacian(const Mat &src, Mat &dst)
 {
 	 Mat kern = (Mat_<double>(3,3) <<
 	 	0,     1/4.0,  0,
@@ -17,6 +21,11 @@ laplacian(Mat &src, Mat &dst)
 
 // Separable blur implementation that can handle images containing NaN.
 // OpenCV blur does not correctly handle such images.
+//
+// src -- source image
+// dst -- destination image (output)
+// ksize -- kernel size
+//
 void
 nanblur(const Mat &src, Mat &dst, int ksize)
 {
@@ -25,6 +34,11 @@ nanblur(const Mat &src, Mat &dst, int ksize)
 }
 
 // Compute the gradient magnitude of image src into dst.
+//
+// src -- source image
+// dX, dY -- derivative in the X and Y directions (output)
+// dst -- destination image of gradient magnitude (output)
+//
 void
 gradientmag(const Mat &src, Mat &dX, Mat &dY, Mat &dst)
 {
@@ -39,6 +53,12 @@ gradientmag(const Mat &src, Mat &dX, Mat &dY, Mat &dst)
 	sqrt(dX.mul(dX) + dY.mul(dY), dst);
 }
 
+//  Find local maximum.
+//
+// gradmag -- SST gradient magnitude
+// high, low -- (output)
+// sigma -- standard deviation
+//
 void
 localmax(const Mat &gradmag, Mat &high, Mat &low, int sigma)
 {
@@ -51,7 +71,7 @@ localmax(const Mat &gradmag, Mat &high, Mat &low, int sigma)
 	Mat DGaussxx, DGaussxy, DGaussyy,
 		Dxx, Dxy, Dyy;
 	
-	CV_Assert(gradmag.type() == CV_32FC1);
+	CHECKMAT(gradmag, CV_32FC1);
 
 	winsz = 2*(NStd*sigma) + 1;
 	DGaussxx = Mat::zeros(winsz, winsz, CV_64FC1);
@@ -76,9 +96,9 @@ localmax(const Mat &gradmag, Mat &high, Mat &low, int sigma)
 	filter2D(gradmag, Dxy, -1, DGaussxy);
 	filter2D(gradmag, Dyy, -1, DGaussyy);
 
-	CV_Assert(Dxx.type() == CV_32FC1);
-	CV_Assert(Dxy.type() == CV_32FC1);
-	CV_Assert(Dyy.type() == CV_32FC1);
+	CHECKMAT(Dxx, CV_32FC1);
+	CHECKMAT(Dxy, CV_32FC1);
+	CHECKMAT(Dyy, CV_32FC1);
 	
 	high.create(Dxx.rows, Dxx.cols, CV_32FC1);
 	low.create(Dxx.rows, Dxx.cols, CV_32FC1);
@@ -104,7 +124,11 @@ localmax(const Mat &gradmag, Mat &high, Mat &low, int sigma)
 
 // Standard deviation filter, implemented as
 //	dst = sqrt(blur(src^2) - blur(src)^2)
-// Ksize is the kernel size.
+//
+// src -- source image
+// dst -- destination image (output)
+// ksize -- kernel size
+//
 void
 stdfilter(const Mat &src, Mat &dst, int ksize)
 {
@@ -117,7 +141,7 @@ stdfilter(const Mat &src, Mat &dst, int ksize)
 
 	// avoid sqrt of nagative number
 	_tmp = bs - b.mul(b);
-	CV_Assert(_tmp.type() == CV_32FC1 && _tmp.isContinuous());
+	CHECKMAT(_tmp, CV_32FC1);
 	tmp = (float*)_tmp.data;
 	for(i = 0; i < (int)_tmp.total(); i++){
 		if(tmp[i] < 0)

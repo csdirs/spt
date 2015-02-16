@@ -197,9 +197,10 @@ public:
 // n -- number of variables
 // src -- images of variables (source) that needs to be quantized
 // _omega, _gradmag -- omega and gradient magnitude image
+// _deltamag -- delta image
 // dst -- destination where quantized images are stored (output)
 //
-void
+static void
 quantize(int n, Var **src, const Mat &_omega, const Mat &_gradmag,
 	const Mat &_deltamag, QVar **dst)
 {
@@ -258,7 +259,7 @@ quantize(int n, Var **src, const Mat &_omega, const Mat &_gradmag,
 // Return a filename based on granule path path with suffix suf.
 // e.g. savefilename("/foo/bar/qux.nc", ".png") returns "qux.png"
 //
-char*
+static char*
 savefilename(char *path, const char *suf)
 {
 	int n;
@@ -277,6 +278,12 @@ savefilename(char *path, const char *suf)
 	return estrdup(buf);
 }
 
+// Compute RGB diff image of cloud mask.
+//
+// _old -- old cloud mask (usually ACSPO cloud mask)
+// _new -- new cloud mask (usually SPT cloud mask)
+// _rgb -- RGB diff image (output)
+//
 static void
 diffcloudmask(const Mat &_old, const Mat &_new, Mat &_rgb)
 {
@@ -326,7 +333,14 @@ diffcloudmask(const Mat &_old, const Mat &_new, Mat &_rgb)
 	}
 }
 
-int
+// Connected components wrapper that limits the minimum size of components.
+//
+// mask -- the image to be labeled
+// connectivity -- 8 or 4 for 8-way or 4-way connectivity respectively
+// lim -- limit on the minimum size of components
+// _cclabels -- destination labeled image (output)
+//
+static int
 connectedComponentsWithLimit(const Mat &mask, int connectivity, int lim, Mat &_cclabels)
 {
 	Mat stats, centoids, _ccrename;
@@ -369,7 +383,7 @@ connectedComponentsWithLimit(const Mat &mask, int connectivity, int lim, Mat &_c
 // _cclabels -- label assigned to pixels where (v1 == q1 && v2 == q2) (output)
 // feat -- features corresponding to _cclabels (output)
 //
-int
+static int
 clusterbin(Size size, int v1, int v2, const short *q1, const short *q2,
 	Var **_vars, Mat &_cclabels, float *feat)
 {
@@ -455,7 +469,7 @@ clusterbin(Size size, int v1, int v2, const short *q1, const short *q2,
 // _glabels -- global labels (output)
 // _feat -- features (output)
 //
-int
+static int
 cluster(QVar *Q1, QVar *Q2, Var **vars, Mat &_glabels, Mat &_feat)
 {
 	int i, glab, *glabels;
@@ -512,8 +526,8 @@ cluster(QVar *Q1, QVar *Q2, Var **vars, Mat &_glabels, Mat &_feat)
 // Remove features from _feat that are not on the border of clusters defined
 // by the clustering labels in _glabels.
 //
-void
-remove_inner_feats(Mat &_feat, const Mat &_glabels)
+static void
+removeinnerfeats(Mat &_feat, const Mat &_glabels)
 {
 	int i, k;
 	Mat elem, _labero;
@@ -532,7 +546,7 @@ remove_inner_feats(Mat &_feat, const Mat &_glabels)
 				k++;
 			}
 		}
-		logprintf("number of feature before inner feats are removed: %d\n", k);
+		logprintf("nnlabel: number of feature before inner feats are removed: %d\n", k);
 	}
 	
 	// erode clusters to remove borders from clusters
@@ -581,7 +595,7 @@ nnlabel(Mat &_feat, Var **_vars, const Mat &_easyclouds,
 	for(k = 0; k < NFEAT; k++)
 		CHECKMAT(_vars[k]->mat, CV_32FC1);
 
-	remove_inner_feats(_feat, _glabels);
+	removeinnerfeats(_feat, _glabels);
 	
 	// Remove features (rows in _feat) containing NaNs.
 	// There are two cases: either all the features are NaN or
@@ -651,8 +665,8 @@ const char VAR_DESCR[] = "SPT mask packed into 1 byte: bits1-2 (00=clear; 01=pro
 
 // Write spt into NetCDF dataset ncid as variable named "spt_mask".
 //
-void
-write_spt_mask(int ncid, Mat &spt)
+static void
+writespt(int ncid, const Mat &spt)
 {
 	int i, n, varid, ndims, dimids[2];
 	nc_type xtype;
@@ -715,31 +729,7 @@ write_spt_mask(int ncid, Mat &spt)
 		ncfatal(n, "nc_putvar_uchar failed");
 }
 
-void
-compute_spt_mask(Mat &_acspo, Mat &_labels, Mat &_spt)
-{
-	int i;
-	uchar *acspo, *labels, *spt, cm;
-	
-	CHECKMAT(_acspo, CV_8UC1);
-	CHECKMAT(_labels, CV_8SC1);
-	
-	_spt.create(_acspo.size(), CV_8UC1);
-	
-	acspo = _acspo.data;
-	labels = _labels.data;
-	spt = _spt.data;
-	
-	for(i = 0; i < (int)_acspo.total(); i++){
-		cm = acspo[i] & MaskCloud;
-		if((cm == MaskCloudProbably || cm == MaskCloudSure) && labels >= 0)
-			spt[i] = 0;
-		else
-			spt[i] = cm >> MaskCloudOffset;
-	}
-}
-
-// Compute thermal fronts. Let:
+// Find thermal fronts. Let:
 //
 //	f(x) = 1.0/(1+exp(100*(x+0.01)))
 //	g(x) = 1.0/(1+exp(-30*(x-0.15)))
@@ -762,8 +752,8 @@ compute_spt_mask(Mat &_acspo, Mat &_labels, Mat &_spt)
 // easyclouds -- easy clouds
 // fronts -- thermal fronts (output)
 //
-void
-thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
+static void
+findfronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 	const Mat &_deltamag, const Mat &_glabels, const Mat &_glabels_nn,
 	const Mat &easyclouds, const Mat &_apm, Mat &_fronts)
 {
@@ -854,8 +844,8 @@ thermal_fronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 // _fronts -- fronts image (input & output)
 // _adjclust -- mask indicated if the a cluster is adjacent to a front (output)
 //
-void
-find_adjclust(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
+static void
+findadjacent(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 	int nclust, const Mat &_clust, const Mat &_acspo, double alpha,
 	Mat &_fronts, Mat &_adjclust)
 {
@@ -888,7 +878,7 @@ find_adjclust(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 		return;
 	CHECKMAT(_cclabels, CV_32SC1);
 	cclabels = (int*)_cclabels.data;
-	logprintf("initial number of fronts: %d\n", nfront);
+	logprintf("findadjacent: initial number of fronts: %d\n", nfront);
 	
 	int countsize[] = {nfront, nclust};
 	SparseMat leftcount(nelem(countsize), countsize, CV_32SC1);
@@ -936,8 +926,8 @@ find_adjclust(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 		}
 	}
 	
-	logprintf("number of pixels left of fronts: %lu\n", leftcount.nzcount());
-	logprintf("number of pixels right of fronts: %lu\n", rightcount.nzcount());
+	logprintf("findadjacent: number of pixels left of fronts: %lu\n", leftcount.nzcount());
+	logprintf("findadjacent: number of pixels right of fronts: %lu\n", rightcount.nzcount());
 	
 	adjclust = _adjclust.data;
 	
@@ -987,7 +977,7 @@ find_adjclust(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 //	and number in (0, 1) is result of interpolation on deletion zones near
 //	cloud/clear sky boundary. (output)
 //
-void
+static void
 resample_acloud(const Resample *r, const Mat &_acspo, Mat &_acloud)
 {
 	int i;
@@ -1028,8 +1018,8 @@ resample_acloud(const Resample *r, const Mat &_acspo, Mat &_acloud)
 // _fronts -- fronts image
 // _spt -- spt mask sorted by latitude (output)
 //
-void
-get_spt(const Resample *r, const Mat &_acspo, const Mat &_clust,
+static void
+getspt(const Resample *r, const Mat &_acspo, const Mat &_clust,
 	const Mat &_adjclust, const Mat &_fronts, Mat &_spt)
 {
 	Mat _labels, stats, centoids, _acloud, _mask;
@@ -1091,7 +1081,8 @@ get_spt(const Resample *r, const Mat &_acspo, const Mat &_clust,
 	}
 }
 
-void
+// Bilateral filter wrapper.
+static void
 bilateral(const Mat &_sst, const Mat &_easyclouds, Mat &_dst, double sigma_color, double sigma_space)
 {
 	int i;
@@ -1125,21 +1116,26 @@ bilateral(const Mat &_sst, const Mat &_easyclouds, Mat &_dst, double sigma_color
 	}
 }
 
-void
-plusminus(const Mat &_src, const Mat &gradmag, Mat &_dst)
+// Plus minus filter, which finds the edges between negative and positive
+// values of source image.
+// 
+// _src -- source image
+// _dst -- destination mask image (output)
+//
+static void
+plusminus(const Mat &_src, Mat &_dst)
 {
 	Mat _tmp;
 	float *src, *tmp;
 	
 	CHECKMAT(_src, CV_32FC1);
-	CHECKMAT(gradmag, CV_32FC1);
 	_tmp.create(_src.size(), CV_32FC1);
 	
 	enum {
-		WSIZE = 11,
+		wsize = 11,
+		maxsum = wsize*wsize,
 	};
-	
-	const double THRESH = 0.3*WSIZE*WSIZE;
+	const double thresh = 0.3*maxsum;
 	
 	src = (float*)_src.data;
 	tmp = (float*)_tmp.data;
@@ -1147,17 +1143,17 @@ plusminus(const Mat &_src, const Mat &gradmag, Mat &_dst)
 	// run box filter on image containing (-1, 1, 99)
 	for(int i = 0; i < (int)_src.total(); i++){
 		if(isnan(src[i]))
-			tmp[i] = 999;
+			tmp[i] = maxsum+1;
 		else if(src[i] < 0)
 			tmp[i] = -1;
 		else
 			tmp[i] = 1;
 	}
-	boxFilter(_tmp, _tmp, -1, Size(WSIZE,WSIZE), Point(-1,-1), false);
+	boxFilter(_tmp, _tmp, -1, Size(wsize,wsize), Point(-1,-1), false);
 	if(DEBUG) savenc("apmsum.nc", _tmp);
 	
 	// create output mask based on box filter output
-	_dst = (-THRESH <= _tmp) & (_tmp <= THRESH);
+	_dst = (-thresh <= _tmp) & (_tmp <= thresh);
 }
 
 int
@@ -1234,7 +1230,7 @@ SAVENC(delbil);
 	Mat bilanom = sst-bil;
 	
 	logprintf("running plus/minus...\n");
-	plusminus(bilanom, gradmag, apm);
+	plusminus(bilanom, apm);
 SAVENC(apm);
 
 	logprintf("quantizing sst delta...\n");
@@ -1258,19 +1254,19 @@ SAVENC(glabels);
 SAVENC(glabels_nn);
 	
 	logprintf("finding thermal fronts...\n");
-	thermal_fronts(lam2, gradmag, stdf, deltamag, glabels, glabels_nn, easyclouds, apm, fronts);
+	findfronts(lam2, gradmag, stdf, deltamag, glabels, glabels_nn, easyclouds, apm, fronts);
 
 	logprintf("finding clusters adjacent to fronts...\n");
-	find_adjclust(dY, dX, gradmag, nclust, glabels_nn, acspo, 5, fronts, adjclust);
+	findadjacent(dY, dX, gradmag, nclust, glabels_nn, acspo, 5, fronts, adjclust);
 SAVENC(fronts);
 
 	logprintf("creating spt mask...\n");
-	get_spt(r, acspo, glabels_nn, adjclust, fronts, spt);
+	getspt(r, acspo, glabels_nn, adjclust, fronts, spt);
 SAVENC(spt);
 
 	logprintf("saving spt mask...\n");
 	spt1 = resample_unsort(r->sind, spt);
-	write_spt_mask(ncid, spt1);
+	writespt(ncid, spt1);
 	
 	acspo1 = resample_unsort(r->sind, acspo);
 	diffcloudmask(acspo1, spt1, diff);

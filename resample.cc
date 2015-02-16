@@ -13,7 +13,7 @@ resample_unsort_(const Mat &sind, const Mat &img)
 	int32_t *sp;
 	T *ip;
 
-	CV_Assert(sind.type() == CV_32SC1);
+	CHECKMAT(sind, CV_32SC1);
 	CV_Assert(img.channels() == 1);
 
 	newimg = Mat::zeros(img.rows, img.cols, img.type());
@@ -61,7 +61,7 @@ resample_sort_(const Mat &sind, const Mat &img)
 	int32_t *sp;
 	T *np;
 
-	CV_Assert(sind.type() == CV_32SC1);
+	CHECKMAT(sind, CV_32SC1);
 	CV_Assert(img.channels() == 1);
 
 	newimg = Mat::zeros(img.rows, img.cols, img.type());
@@ -123,8 +123,8 @@ avgfilter3(const Mat &in, const Mat &sind)
 	int i, j, rows, cols;
 	float *op;
 
-	CV_Assert(in.type() == CV_32FC1);
-	CV_Assert(sind.type() == CV_32SC1);
+	CHECKMAT(in, CV_32FC1);
+	CHECKMAT(sind, CV_32SC1);
 	rows = in.rows;
 	cols = in.cols;
 
@@ -156,9 +156,9 @@ resample_interp(const Mat &simg, const Mat &slat, const Mat &slandmask)
 	Mat newimg, bufmat;
 	double x, llat, rlat, lval, rval;
 
-	CV_Assert(simg.type() == CV_32FC1);
-	CV_Assert(slat.type() == CV_32FC1);
-	CV_Assert(slandmask.type() == CV_8UC1);
+	CHECKMAT(simg, CV_32FC1);
+	CHECKMAT(slat, CV_32FC1);
+	CHECKMAT(slandmask, CV_8UC1);
 
 	newimg = simg.clone();
 	bufmat = Mat::zeros(simg.rows, 1, CV_32SC1);
@@ -229,7 +229,7 @@ argsortlat(const Mat &lat, int swathsize, Mat &sortidx)
 	Mat col, idx, botidx;
 	Range colrg, toprg, botrg;
 	
-	CV_Assert(lat.type() == CV_32FC1);
+	CHECKMAT(lat, CV_32FC1);
 	CV_Assert(swathsize >= 2);
 	CV_Assert(lat.data != sortidx.data);
 	
@@ -325,8 +325,8 @@ benchmark_avgfilter3(Mat &img, Mat &sind, int N)
 void
 resample_init(Resample *r, const Mat &lat, const Mat &acspo)
 {
-	CV_Assert(lat.type() == CV_32FC1);
-	CV_Assert(acspo.type() == CV_8UC1);
+	CHECKMAT(lat, CV_32FC1);
+	CHECKMAT(acspo, CV_8UC1);
 
 	if(r == NULL)
 		eprintf("Nil Resample\n");
@@ -345,7 +345,7 @@ resample_float32(const Resample *r, const Mat &src, Mat &dst, bool sort)
 	if(r == NULL)
 		eprintf("Nil Resample\n");
 	
-	CV_Assert(src.type() == CV_32FC1);
+	CHECKMAT(src, CV_32FC1);
 
 	dst = sort ? resample_sort(r->sind, src) : src;
 //benchmark_avgfilter3(src, r->sind, 100);
