@@ -225,31 +225,6 @@ quantize(int n, Var **src, const Mat &_omega, const Mat &_sstmag,
 	}
 }
 
-
-// Return a filename based on granule path path with suffix suf.
-// e.g. savefilename("/foo/bar/qux.nc", ".png") returns "qux.png"
-//
-/*
-static char*
-savefilename(char *path, const char *suf)
-{
-	int n;
-	char buf[200], *p;
-	
-	p = strrchr(path, '/');
-	if(!p)
-		p = path;
-	else
-		p++;
-	
-	n = strlen(p) - 3;
-	p = strncpy(buf, p, n);	// don't copy ".nc" extension
-	p += n;
-	strcpy(p, suf);
-	return estrdup(buf);
-}
-*/
-
 // Connected components wrapper that limits the minimum size of components.
 //
 // mask -- the image to be labeled
@@ -576,10 +551,6 @@ labelnbrs(Mat &_feat, Var **_vars, const Mat &_easyclouds,
 	// TODO: erode glabels by 21, but not where sstmag < GRAD_LOW
 }
 
-#define VAR_NAME	"spt_mask"
-const char VAR_UNITS[] = "none";
-const char VAR_DESCR[] = "SPT mask packed into 1 byte: bits1-2 (00=clear; 01=probably clear; 10=cloudy; 11=clear-sky mask undefined); bit3 (0=no thermal front; 1=thermal front)";
-
 // Write spt into NetCDF dataset ncid as variable named "spt_mask".
 //
 static void
@@ -591,6 +562,10 @@ writespt(int ncid, const Mat &spt)
 	
 	CHECKMAT(spt, CV_8UC1);
 	
+	const char VAR_NAME[] = "spt_mask";
+	const char VAR_UNITS[] = "none";
+	const char VAR_DESCR[] = "SPT mask packed into 1 byte: bits1-2 (00=clear; 01=probably clear; 10=cloudy; 11=clear-sky mask undefined); bit3 (0=no thermal front; 1=thermal front)";
+
 	// chunk sizes used by acspo_mask
 	const size_t chunksizes[] = {1024, 3200};
 	
@@ -646,28 +621,17 @@ writespt(int ncid, const Mat &spt)
 		ncfatal(n, "nc_putvar_uchar failed");
 }
 
-// Find thermal fronts. Let:
+// Find thermal fronts.
 //
-//	f(x) = 1.0/(1+exp(100*(x+0.01)))
-//	g(x) = 1.0/(1+exp(-30*(x-0.15)))
-//	h(x) = 1.0/(1+exp(30*(x-0.15)))
-//	q(x) = 1.0/(1+exp(100*(x-0.05)))
-//	prod1 = f(lam2)*g(sstmag)*h(stdf)
-//	prod2 = f(lam2)*clip(sstmag, 0, 1)
-//
-// fronts must satisfy:
-//	- not in dilated easy clouds
-//	- over domain added by nearest neighbor search
-//	- prod1 > 0.5 || prod2 > 0.5
-//
-// lam2 -- local max
-// sstmag -- gradient magnitude
-// stdf -- stdfilter(sst - medianBlur(sst))
-// ncc -- number of connected components labeled in glabels
-// glabels -- cluster labels before nearest neighbor lookup
-// glabelsnn -- cluster labels after nearest neighbor lookup
-// easyclouds -- easy clouds
-// fronts -- thermal fronts (output)
+// _lam2 -- local max
+// _sstmag -- gradient magnitude
+// _stdf -- stdfilter(sst - medianBlur(sst))
+// _deltamag -- gradient magnitude of delta
+// _glabels -- cluster labels before nearest neighbor lookup
+// _glabelsnn -- cluster labels after nearest neighbor lookup
+// _easyclouds -- easy clouds
+// _apm -- anomaly "plus minus" filter output
+// _fronts -- thermal fronts (output)
 //
 static void
 findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
@@ -721,28 +685,28 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 		if(dilc[i] || glabelsnn[i] < 0 || glabels[i] >= 0)
 			continue;
 
+		// detect front based on sstmag, deltamag, anomaly
 		if(apm[i] && sstmag[i] > 0.1 && sstmag[i]/deltamag[i] > 10){
 			fronts[i] = FRONT_INIT;
 			continue;
 		}
 		
-		// it's front if logit'(lam2) * clip(sstmag, 0, 1) > 0.5
-		llam = 1.0/(1+exp(100*(lam2[i]+0.01)));
-		ldel = 1.0/(1+exp(100*(deltamag[i]-0.05)));
+		// detect front based on sstmag, deltamag, lam2
 		m = sstmag[i];
-		if(m > 1){
+		if(m > 1)
 			m = 1;
-		}
-		if(llam*ldel*m > 0.5){
+		ldel = 1.0/(1+exp(100*(deltamag[i]-0.05)));
+		llam = 1.0/(1+exp(100*(lam2[i]+0.01)));
+		if(m*ldel*llam > 0.5){
 			fronts[i] = FRONT_INIT;
 			continue;
 		}
 		
-		// it's front if logit'(lam2)*logit''(stdf)*logit'''(stdf) > 0.5
+		// detect front based on sstmag, deltamag, lam2, stdf
 		lmag = 1.0/(1+exp(-30*(sstmag[i]-0.15)));
-		lstdf = 1.0/(1+exp(30*(stdf[i]-0.15)));
 		ldel = 1.0/(1+exp(100*(deltamag[i]-0.1)));
-		if(llam*lmag*lstdf*ldel > 0.5)
+		lstdf = 1.0/(1+exp(30*(stdf[i]-0.15)));
+		if(lmag*ldel*llam*lstdf > 0.5)
 			fronts[i] = FRONT_INIT;
 	}
 }
@@ -750,7 +714,6 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 // Narrow down the number of thermal fronts and find clusters that are
 // adjacent to those fronts.
 //
-// _fronts -- fronts mask
 // _dy -- column-wise gradient
 // _dx -- row-wise gradient
 // _sstmag -- gradient magnitude
@@ -1000,7 +963,7 @@ getspt(const Resample *r, const Mat &_acspo, const Mat &_clust,
 
 // Bilateral filter wrapper.
 static void
-bilateral(const Mat &_sst, const Mat &_easyclouds, Mat &_dst, double sigma_color, double sigma_space)
+sstbilateral(const Mat &_sst, const Mat &_easyclouds, Mat &_dst, double sigma_color, double sigma_space)
 {
 	int i;
 	Mat _src;
@@ -1136,8 +1099,8 @@ SAVENC(stdf);
 SAVENC(easyclouds);
 	
 	logprintf("computing anomaly plus/minus...\n");
-	bilateral(sst, easyclouds, sstbil, 3, 200);
-	//bilateral(delta, easyclouds, deltabil, 0.5, 200);
+	sstbilateral(sst, easyclouds, sstbil, 3, 200);
+	//sstbilateral(delta, easyclouds, deltabil, 0.5, 200);
 	Mat bilanom = sst-sstbil;
 	plusminus(bilanom, apm);
 SAVENC(sstbil);

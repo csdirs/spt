@@ -161,3 +161,25 @@ diffcloudmask(const Mat &_old, const Mat &_new, Mat &_rgb)
 		rgb += 3;
 	}
 }
+
+// Return a filename based on granule path path with suffix suf.
+// e.g. savefilename("/foo/bar/qux.nc", ".png") returns "qux.png"
+//
+char*
+savefilename(char *path, const char *suf)
+{
+	int n;
+	char buf[200], *p;
+	
+	p = strrchr(path, '/');
+	if(!p)
+		p = path;
+	else
+		p++;
+	
+	n = strlen(p) - 3;
+	p = strncpy(buf, p, n);	// don't copy ".nc" extension
+	p += n;
+	strcpy(p, suf);
+	return estrdup(buf);
+}
