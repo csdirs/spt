@@ -259,6 +259,7 @@ quantize(int n, Var **src, const Mat &_omega, const Mat &_sstmag,
 // Return a filename based on granule path path with suffix suf.
 // e.g. savefilename("/foo/bar/qux.nc", ".png") returns "qux.png"
 //
+/*
 static char*
 savefilename(char *path, const char *suf)
 {
@@ -277,6 +278,7 @@ savefilename(char *path, const char *suf)
 	strcpy(p, suf);
 	return estrdup(buf);
 }
+*/
 
 // Compute RGB diff image of cloud mask.
 //
@@ -1159,10 +1161,11 @@ plusminus(const Mat &_src, Mat &_dst)
 int
 main(int argc, char **argv)
 {
-	Mat sst, cmc, bil, anomaly, lat, lon, m14, m15, m16, medf, stdf, blurf,
-		acspo, acspo1, dX, dY, sstmag, delta, omega, albedo, BQ, DQ,
-		glabels, glabelsnn, feat, lam1, lam2, apm,
-		easyclouds, easyfronts, fronts, adjclust, spt, spt1, diff;
+	Mat dX, dY, sstmag, deltamag, lam1, lam2,
+		medf, stdf, blurf,
+		sstbil, deltabil, apm,
+		glabels, glabelsnn, feat, BQ, DQ,
+		fronts, adjclust, spt, diff;
 	int ncid, n, nclust;
 	char *path;
 	Resample *r;
@@ -1175,26 +1178,26 @@ main(int argc, char **argv)
 	logprintf("reading and resampling...\n");
 	r = new Resample;
 	ncid = open_resampled(path, r, NC_WRITE);
-	sst = readvar_resampled(ncid, r, "sst_regression");
-	cmc = readvar_resampled(ncid, r, "sst_reynolds");
-	lat = readvar_resampled(ncid, r, "latitude");
-	lon = readvar_resampled(ncid, r, "longitude");
-	acspo = readvar_resampled(ncid, r, "acspo_mask");
-	m14 = readvar_resampled(ncid, r, "brightness_temp_chM14");
-	m15 = readvar_resampled(ncid, r, "brightness_temp_chM15");
-	m16 = readvar_resampled(ncid, r, "brightness_temp_chM16");
-	albedo = readvar_resampled(ncid, r, "albedo_chM7");
-
+	Mat sst = readvar_resampled(ncid, r, "sst_regression");
+	Mat cmc = readvar_resampled(ncid, r, "sst_reynolds");
+	Mat lat = readvar_resampled(ncid, r, "latitude");
+	Mat lon = readvar_resampled(ncid, r, "longitude");
+	Mat acspo = readvar_resampled(ncid, r, "acspo_mask");
+	Mat m14 = readvar_resampled(ncid, r, "brightness_temp_chM14");
+	Mat m15 = readvar_resampled(ncid, r, "brightness_temp_chM15");
+	Mat m16 = readvar_resampled(ncid, r, "brightness_temp_chM16");
+	Mat albedo = readvar_resampled(ncid, r, "albedo_chM7");
 SAVENC(acspo);
 SAVENC(sst);
 SAVENC(cmc);
 SAVENC(albedo);
 
 	logprintf("computing sstmag, etc....\n");
-	delta = m15 - m16;
-	omega = m14 - m15;
-	anomaly = sst - cmc;
-	gradientmag(sst, dX, dY, sstmag);
+	Mat delta = m15 - m16;
+	Mat omega = m14 - m15;
+	Mat anomaly = sst - cmc;
+	gradientmag(sst, sstmag, dX, dY);
+	gradientmag(delta, deltamag);
 	localmax(sstmag, lam2, lam1, 1);
 SAVENC(m15);
 SAVENC(m16);
@@ -1202,53 +1205,47 @@ SAVENC(delta);
 SAVENC(omega);
 SAVENC(anomaly);
 SAVENC(sstmag);
-SAVENC(lam2);
-	
-	Mat tmp1, tmp2, deltamag;
-	gradientmag(delta, tmp1, tmp2, deltamag);
 SAVENC(deltamag);
+SAVENC(lam2);
 
+	logprintf("computing easyclouds...\n");
 	medianBlur(sst, medf, 5);
 	stdfilter(sst-medf, stdf, 7);
 	//nanblur(sst, blurf, 7);
-	easyclouds = (sst < SST_LOW) | (stdf > STD_THRESH);
+	Mat easyclouds = (sst < SST_LOW) | (stdf > STD_THRESH);
 		//| (abs(sst - blurf) > EDGE_THRESH);
+	//Mat easyfronts = (sst > SST_LOW) & (sstmag > 0.5)
+	//	& (stdf < STD_THRESH) & (lam2 < -0.05);
 SAVENC(medf);
 SAVENC(stdf);
 SAVENC(easyclouds);
-
-	//easyfronts = (sst > SST_LOW) & (sstmag > 0.5)
-	//	& (stdf < STD_THRESH) & (lam2 < -0.05);
-
-	bilateral(sst, easyclouds, bil, 3, 200);
-SAVENC(bil);
-
-	Mat delbil;
-	bilateral(delta, easyclouds, delbil, 0.5, 200);
-SAVENC(delbil);
 	
-	Mat bilanom = sst-bil;
-	
-	logprintf("running plus/minus...\n");
+	logprintf("computing anomaly plus/minus...\n");
+	bilateral(sst, easyclouds, sstbil, 3, 200);
+	//bilateral(delta, easyclouds, deltabil, 0.5, 200);
+	Mat bilanom = sst-sstbil;
 	plusminus(bilanom, apm);
+SAVENC(sstbil);
 SAVENC(apm);
 
-	logprintf("quantizing sst delta...\n");
+	logprintf("quantizing variables...\n");
 	Var *qinput[] = {new BilAnom(bilanom), new Delta(delta)};
 	QVar *qoutput[] = {new QVar(BQ), new QVar(DQ)};
 	quantize(nelem(qinput), qinput, omega, sstmag, deltamag, qoutput);
 	BQ = qoutput[0]->mat;
 	DQ = qoutput[1]->mat;
 
-	logprintf("computing quantized features...\n");
-	Var *vars[NFEAT];
-	vars[FEAT_LAT] = new Lat(lat);
-	vars[FEAT_LON] = new Lon(lon);
-	vars[FEAT_SST] = new SST(sst);
-	vars[FEAT_DELTA] = new Delta(delta);
+	logprintf("clustering...\n");
+	Var *vars[NFEAT] = {
+		new Lat(lat),
+		new Lon(lon),
+		new SST(sst),
+		new Delta(delta),
+	};
 	nclust = cluster(qoutput[0], qoutput[1], vars, glabels, feat);
 SAVENC(glabels);
 
+	logprintf("labeling neighbors...\n");
 	glabelsnn = glabels.clone();
 	labelnbrs(feat, vars, easyclouds, sstmag, glabelsnn);
 SAVENC(glabelsnn);
@@ -1265,12 +1262,13 @@ SAVENC(fronts);
 SAVENC(spt);
 
 	logprintf("saving spt mask...\n");
-	spt1 = resample_unsort(r->sind, spt);
+	Mat spt1 = resample_unsort(r->sind, spt);
 	writespt(ncid, spt1);
-	
-	acspo1 = resample_unsort(r->sind, acspo);
+	Mat acspo1 = resample_unsort(r->sind, acspo);
 	diffcloudmask(acspo1, spt1, diff);
 SAVENC(diff);
+
+	logprintf("saving diff image as diff.png\n");
 	cvtColor(diff, diff, CV_RGB2BGR);
 	resize(diff, diff, Size(), 1/6.0, 1/6.0, INTER_AREA);
 	imwrite("diff.png", diff);
@@ -1278,7 +1276,6 @@ SAVENC(diff);
 	n = nc_close(ncid);
 	if(n != NC_NOERR)
 		ncfatal(n, "nc_close failed for %s", path);
-
 	delete r;
 	logprintf("done\n");
 	return 0;

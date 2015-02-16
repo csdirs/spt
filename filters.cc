@@ -36,11 +36,11 @@ nanblur(const Mat &src, Mat &dst, int ksize)
 // Compute the gradient magnitude of image src into dst.
 //
 // src -- source image
-// dX, dY -- derivative in the X and Y directions (output)
 // dst -- destination image of gradient magnitude (output)
+// dX, dY -- derivative in the X and Y directions (output)
 //
 void
-gradientmag(const Mat &src, Mat &dX, Mat &dY, Mat &dst)
+gradientmag(const Mat &src, Mat &dst, Mat &dX, Mat &dY)
 {
 	Mat h = (Mat_<double>(5,1) <<
 		0.036420, 0.248972, 0.429217, 0.248972, 0.036420);
@@ -51,6 +51,18 @@ gradientmag(const Mat &src, Mat &dX, Mat &dY, Mat &dst)
 	// We negate h here to fix the sign of Dy
 	sepFilter2D(src, dY, -1, hp, -h);
 	sqrt(dX.mul(dX) + dY.mul(dY), dst);
+}
+
+// Compute the gradient magnitude of image src into dst.
+//
+// src -- source image
+// dst -- destination image of gradient magnitude (output)
+//
+void
+gradientmag(const Mat &src, Mat &dst)
+{
+	Mat dX, dY;
+	gradientmag(src, dst, dX, dY);
 }
 
 //  Find local maximum.
