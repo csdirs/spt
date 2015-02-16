@@ -55,12 +55,12 @@ gradientmag(const Mat &src, Mat &dX, Mat &dY, Mat &dst)
 
 //  Find local maximum.
 //
-// gradmag -- SST gradient magnitude
+// sstmag -- SST gradient magnitude
 // high, low -- (output)
 // sigma -- standard deviation
 //
 void
-localmax(const Mat &gradmag, Mat &high, Mat &low, int sigma)
+localmax(const Mat &sstmag, Mat &high, Mat &low, int sigma)
 {
 	enum {
 		NStd = 3,
@@ -71,7 +71,7 @@ localmax(const Mat &gradmag, Mat &high, Mat &low, int sigma)
 	Mat DGaussxx, DGaussxy, DGaussyy,
 		Dxx, Dxy, Dyy;
 	
-	CHECKMAT(gradmag, CV_32FC1);
+	CHECKMAT(sstmag, CV_32FC1);
 
 	winsz = 2*(NStd*sigma) + 1;
 	DGaussxx = Mat::zeros(winsz, winsz, CV_64FC1);
@@ -92,9 +92,9 @@ localmax(const Mat &gradmag, Mat &high, Mat &low, int sigma)
 				1/(2*M_PI*pow(sigma, 6)) * (x*y) * e;
 		}
 	}
-	filter2D(gradmag, Dxx, -1, DGaussxx);
-	filter2D(gradmag, Dxy, -1, DGaussxy);
-	filter2D(gradmag, Dyy, -1, DGaussyy);
+	filter2D(sstmag, Dxx, -1, DGaussxx);
+	filter2D(sstmag, Dxy, -1, DGaussxy);
+	filter2D(sstmag, Dyy, -1, DGaussyy);
 
 	CHECKMAT(Dxx, CV_32FC1);
 	CHECKMAT(Dxy, CV_32FC1);

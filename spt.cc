@@ -196,12 +196,12 @@ public:
 //
 // n -- number of variables
 // src -- images of variables (source) that needs to be quantized
-// _omega, _gradmag -- omega and gradient magnitude image
+// _omega, _sstmag -- omega and gradient magnitude image
 // _deltamag -- delta image
 // dst -- destination where quantized images are stored (output)
 //
 static void
-quantize(int n, Var **src, const Mat &_omega, const Mat &_gradmag,
+quantize(int n, Var **src, const Mat &_omega, const Mat &_sstmag,
 	const Mat &_deltamag, QVar **dst)
 {
 	int i, k;
@@ -219,10 +219,10 @@ quantize(int n, Var **src, const Mat &_omega, const Mat &_gradmag,
 	}
 	
 	CHECKMAT(_omega, CV_32FC1);
-	CHECKMAT(_gradmag, CV_32FC1);
+	CHECKMAT(_sstmag, CV_32FC1);
 	CHECKMAT(_deltamag, CV_32FC1);
 	omega = (float*)_omega.data;
-	gm = (float*)_gradmag.data;
+	gm = (float*)_sstmag.data;
 	deltamag = (float*)_deltamag.data;
 	
 	// quantize variables
@@ -572,15 +572,15 @@ removeinnerfeats(Mat &_feat, const Mat &_glabels)
 // _feat -- features (rows containing NaNs are removed)
 // _var -- varibles used to query for nearest neighbor
 // _easyclouds -- easyclouds mask
-// _gradmag -- gradient magnitude
+// _sstmag -- gradient magnitude
 // _glabels -- global labels (input & output)
 //
 static void
 nnlabel(Mat &_feat, Var **_vars, const Mat &_easyclouds,
-	const Mat &_gradmag, Mat &_glabels)
+	const Mat &_sstmag, Mat &_glabels)
 {
 	int i, k, *indices, *glabels;
-	float *vs, *vd, *vars[NFEAT], *gradmag;
+	float *vs, *vd, *vars[NFEAT], *sstmag;
 	Mat _indices, _labdil;
 	std::vector<float> q(NFEAT), dists(1);
 	std::vector<int> ind(1);
@@ -590,7 +590,7 @@ nnlabel(Mat &_feat, Var **_vars, const Mat &_easyclouds,
 	CHECKMAT(_feat, CV_32FC1);
 	CV_Assert(_feat.cols == NFEAT);
 	CHECKMAT(_easyclouds, CV_8UC1);
-	CHECKMAT(_gradmag, CV_32FC1);
+	CHECKMAT(_sstmag, CV_32FC1);
 	CHECKMAT(_glabels, CV_32SC1);
 	for(k = 0; k < NFEAT; k++)
 		CHECKMAT(_vars[k]->mat, CV_32FC1);
@@ -625,7 +625,7 @@ nnlabel(Mat &_feat, Var **_vars, const Mat &_easyclouds,
 	
 	glabels = (int*)_glabels.data;
 	easyclouds = (uchar*)_easyclouds.data;
-	gradmag = (float*)_gradmag.data;
+	sstmag = (float*)_sstmag.data;
 	labdil = (uchar*)_labdil.data;
 	for(k = 0; k < NFEAT; k++)
 		vars[k] = (float*)_vars[k]->mat.data;
@@ -635,7 +635,7 @@ nnlabel(Mat &_feat, Var **_vars, const Mat &_easyclouds,
 	for(i = 0; i < (int)size.area(); i++){
 		if(!labdil[i] || glabels[i] >= 0	// not regions added by dilation
 		|| easyclouds[i]
-		|| (gradmag[i] < GRAD_LOW && glabels[i] != COMP_SPECKLE))
+		|| (sstmag[i] < GRAD_LOW && glabels[i] != COMP_SPECKLE))
 			continue;
 		
 		bool ok = true;
@@ -656,7 +656,7 @@ nnlabel(Mat &_feat, Var **_vars, const Mat &_easyclouds,
 	}
 	logprintf("nnlabel: done searching nearest neighbors\n");
 
-	// TODO: erode glabels by 21, but not where gradmag < GRAD_LOW
+	// TODO: erode glabels by 21, but not where sstmag < GRAD_LOW
 }
 
 #define VAR_NAME	"spt_mask"
@@ -735,8 +735,8 @@ writespt(int ncid, const Mat &spt)
 //	g(x) = 1.0/(1+exp(-30*(x-0.15)))
 //	h(x) = 1.0/(1+exp(30*(x-0.15)))
 //	q(x) = 1.0/(1+exp(100*(x-0.05)))
-//	prod1 = f(lam2)*g(gradmag)*h(stdf)
-//	prod2 = f(lam2)*clip(gradmag, 0, 1)
+//	prod1 = f(lam2)*g(sstmag)*h(stdf)
+//	prod2 = f(lam2)*clip(sstmag, 0, 1)
 //
 // fronts must satisfy:
 //	- not in dilated easy clouds
@@ -744,7 +744,7 @@ writespt(int ncid, const Mat &spt)
 //	- prod1 > 0.5 || prod2 > 0.5
 //
 // lam2 -- local max
-// gradmag -- gradient magnitude
+// sstmag -- gradient magnitude
 // stdf -- stdfilter(sst - medianBlur(sst))
 // ncc -- number of connected components labeled in glabels
 // glabels -- cluster labels before nearest neighbor lookup
@@ -753,19 +753,19 @@ writespt(int ncid, const Mat &spt)
 // fronts -- thermal fronts (output)
 //
 static void
-findfronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
+findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 	const Mat &_deltamag, const Mat &_glabels, const Mat &_glabels_nn,
 	const Mat &easyclouds, const Mat &_apm, Mat &_fronts)
 {
 	Mat _dilc, _dilq;
-	float *lam2, *gradmag, *stdf, *deltamag;
+	float *lam2, *sstmag, *stdf, *deltamag;
 	double m, llam, lmag, lstdf, ldel;
 	int i, *glabels, *glabels_nn;
 	uchar *dilc, *apm;
 	schar *fronts;
 	
 	CHECKMAT(_lam2, CV_32FC1);
-	CHECKMAT(_gradmag, CV_32FC1);
+	CHECKMAT(_sstmag, CV_32FC1);
 	CHECKMAT(_stdf, CV_32FC1);
 	CHECKMAT(_deltamag, CV_32FC1);
 	CHECKMAT(_glabels, CV_32SC1);
@@ -775,7 +775,7 @@ findfronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 	_fronts.create(_glabels.size(), CV_8SC1);
 	
 	lam2 = (float*)_lam2.data;
-	gradmag = (float*)_gradmag.data;
+	sstmag = (float*)_sstmag.data;
 	stdf = (float*)_stdf.data;
 	deltamag = (float*)_deltamag.data;
 	glabels = (int*)_glabels.data;
@@ -804,15 +804,15 @@ findfronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 		if(dilc[i] || glabels_nn[i] < 0 || glabels[i] >= 0)
 			continue;
 
-		if(apm[i] && gradmag[i] > 0.1 && gradmag[i]/deltamag[i] > 10){
+		if(apm[i] && sstmag[i] > 0.1 && sstmag[i]/deltamag[i] > 10){
 			fronts[i] = FRONT_INIT;
 			continue;
 		}
 		
-		// it's front if logit'(lam2) * clip(gradmag, 0, 1) > 0.5
+		// it's front if logit'(lam2) * clip(sstmag, 0, 1) > 0.5
 		llam = 1.0/(1+exp(100*(lam2[i]+0.01)));
 		ldel = 1.0/(1+exp(100*(deltamag[i]-0.05)));
-		m = gradmag[i];
+		m = sstmag[i];
 		if(m > 1){
 			m = 1;
 		}
@@ -822,7 +822,7 @@ findfronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 		}
 		
 		// it's front if logit'(lam2)*logit''(stdf)*logit'''(stdf) > 0.5
-		lmag = 1.0/(1+exp(-30*(gradmag[i]-0.15)));
+		lmag = 1.0/(1+exp(-30*(sstmag[i]-0.15)));
 		lstdf = 1.0/(1+exp(30*(stdf[i]-0.15)));
 		ldel = 1.0/(1+exp(100*(deltamag[i]-0.1)));
 		if(llam*lmag*lstdf*ldel > 0.5)
@@ -836,7 +836,7 @@ findfronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 // _fronts -- fronts mask
 // _dy -- column-wise gradient
 // _dx -- row-wise gradient
-// _gradmag -- gradient magnitude
+// _sstmag -- gradient magnitude
 // nclust -- number of clusters
 // _clust -- clustering labels
 // _acspo -- ACSPO mask
@@ -845,26 +845,26 @@ findfronts(const Mat &_lam2, const Mat &_gradmag, const Mat &_stdf,
 // _adjclust -- mask indicated if the a cluster is adjacent to a front (output)
 //
 static void
-findadjacent(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
+findadjacent(const Mat &_dy, const Mat &_dx, const Mat &_sstmag,
 	int nclust, const Mat &_clust, const Mat &_acspo, double alpha,
 	Mat &_fronts, Mat &_adjclust)
 {
 	Mat _cclabels, _fstats;
 	int i, j, *p, nfront, y, x, k, left, right, *cclabels, *clust;
 	schar *fronts;
-	float *dy, *dx, *gradmag;
+	float *dy, *dx, *sstmag;
 	double dy1, dx1, *fstats, *fs, t;
 	uchar *acspo, *adjclust;
 	
 	CHECKMAT(_dy, CV_32FC1);
 	CHECKMAT(_dx, CV_32FC1);
-	CHECKMAT(_gradmag, CV_32FC1);
+	CHECKMAT(_sstmag, CV_32FC1);
 	CHECKMAT(_clust, CV_32SC1);
 	CHECKMAT(_acspo, CV_8UC1);
 	CHECKMAT(_fronts, CV_8SC1);
 	dy = (float*)_dy.data;
 	dx = (float*)_dx.data;
-	gradmag = (float*)_gradmag.data;
+	sstmag = (float*)_sstmag.data;
 	clust = (int*)_clust.data;
 	acspo = (uchar*)_acspo.data;
 	fronts = (schar*)_fronts.data;
@@ -897,8 +897,8 @@ findadjacent(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 			}
 			
 			// normalize vector (dy, dx) and multiply it by alpha
-			dy1 = round(alpha * dy[k]/gradmag[k]);
-			dx1 = round(alpha * dx[k]/gradmag[k]);
+			dy1 = round(alpha * dy[k]/sstmag[k]);
+			dx1 = round(alpha * dx[k]/sstmag[k]);
 			
 			// compute indices of left and right sides
 			left = k + dx1*_fronts.cols - dy1;
@@ -907,7 +907,7 @@ findadjacent(const Mat &_dy, const Mat &_dx, const Mat &_gradmag,
 			// compute statistics of front
 			fs = &fstats[NFSTAT * cclabels[k]];
 			fs[FSTAT_SIZE]++;
-			fs[FSTAT_SUMMAG] += gradmag[k];
+			fs[FSTAT_SUMMAG] += sstmag[k];
 			fronts[k] = FRONT_BIG;
 			if(0 <= left && left < (int)_fronts.total()
 			&& (clust[left] >= 0 || (acspo[left]&MaskLand) != 0)){
@@ -1160,7 +1160,7 @@ int
 main(int argc, char **argv)
 {
 	Mat sst, cmc, bil, anomaly, lat, lon, m14, m15, m16, medf, stdf, blurf,
-		acspo, acspo1, dX, dY, gradmag, delta, omega, albedo, BQ, DQ,
+		acspo, acspo1, dX, dY, sstmag, delta, omega, albedo, BQ, DQ,
 		glabels, glabels_nn, feat, lam1, lam2, apm,
 		easyclouds, easyfronts, fronts, adjclust, spt, spt1, diff;
 	int ncid, n, nclust;
@@ -1190,18 +1190,18 @@ SAVENC(sst);
 SAVENC(cmc);
 SAVENC(albedo);
 
-	logprintf("computing gradmag, etc....\n");
+	logprintf("computing sstmag, etc....\n");
 	delta = m15 - m16;
 	omega = m14 - m15;
 	anomaly = sst - cmc;
-	gradientmag(sst, dX, dY, gradmag);
-	localmax(gradmag, lam2, lam1, 1);
+	gradientmag(sst, dX, dY, sstmag);
+	localmax(sstmag, lam2, lam1, 1);
 SAVENC(m15);
 SAVENC(m16);
 SAVENC(delta);
 SAVENC(omega);
 SAVENC(anomaly);
-SAVENC(gradmag);
+SAVENC(sstmag);
 SAVENC(lam2);
 	
 	Mat tmp1, tmp2, deltamag;
@@ -1217,7 +1217,7 @@ SAVENC(medf);
 SAVENC(stdf);
 SAVENC(easyclouds);
 
-	//easyfronts = (sst > SST_LOW) & (gradmag > 0.5)
+	//easyfronts = (sst > SST_LOW) & (sstmag > 0.5)
 	//	& (stdf < STD_THRESH) & (lam2 < -0.05);
 
 	bilateral(sst, easyclouds, bil, 3, 200);
@@ -1236,7 +1236,7 @@ SAVENC(apm);
 	logprintf("quantizing sst delta...\n");
 	Var *qinput[] = {new BilAnom(bilanom), new Delta(delta)};
 	QVar *qoutput[] = {new QVar(BQ), new QVar(DQ)};
-	quantize(nelem(qinput), qinput, omega, gradmag, deltamag, qoutput);
+	quantize(nelem(qinput), qinput, omega, sstmag, deltamag, qoutput);
 	BQ = qoutput[0]->mat;
 	DQ = qoutput[1]->mat;
 
@@ -1250,14 +1250,14 @@ SAVENC(apm);
 SAVENC(glabels);
 
 	glabels_nn = glabels.clone();
-	nnlabel(feat, vars, easyclouds, gradmag, glabels_nn);
+	nnlabel(feat, vars, easyclouds, sstmag, glabels_nn);
 SAVENC(glabels_nn);
 	
 	logprintf("finding thermal fronts...\n");
-	findfronts(lam2, gradmag, stdf, deltamag, glabels, glabels_nn, easyclouds, apm, fronts);
+	findfronts(lam2, sstmag, stdf, deltamag, glabels, glabels_nn, easyclouds, apm, fronts);
 
 	logprintf("finding clusters adjacent to fronts...\n");
-	findadjacent(dY, dX, gradmag, nclust, glabels_nn, acspo, 5, fronts, adjclust);
+	findadjacent(dY, dX, sstmag, nclust, glabels_nn, acspo, 5, fronts, adjclust);
 SAVENC(fronts);
 
 	logprintf("creating spt mask...\n");

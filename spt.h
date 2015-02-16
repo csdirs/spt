@@ -117,5 +117,5 @@ void loadnpy(const char *filename, Mat &mat);
 void	laplacian(Mat &src, Mat &dst);
 void	nanblur(const Mat &src, Mat &dst, int ksize);
 void	gradientmag(const Mat &src, Mat &dX, Mat &dY, Mat &dst);
-void	localmax(const Mat &gradmag, Mat &high, Mat &low, int sigma);
+void	localmax(const Mat &sstmag, Mat &high, Mat &low, int sigma);
 void	stdfilter(const Mat &src, Mat &dst, int ksize);
