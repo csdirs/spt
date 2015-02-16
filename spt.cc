@@ -546,7 +546,7 @@ removeinnerfeats(Mat &_feat, const Mat &_glabels)
 				k++;
 			}
 		}
-		logprintf("nnlabel: number of feature before inner feats are removed: %d\n", k);
+		logprintf("labelnbrs: number of feature before inner feats are removed: %d\n", k);
 	}
 	
 	// erode clusters to remove borders from clusters
@@ -576,7 +576,7 @@ removeinnerfeats(Mat &_feat, const Mat &_glabels)
 // _glabels -- global labels (input & output)
 //
 static void
-nnlabel(Mat &_feat, Var **_vars, const Mat &_easyclouds,
+labelnbrs(Mat &_feat, Var **_vars, const Mat &_easyclouds,
 	const Mat &_sstmag, Mat &_glabels)
 {
 	int i, k, *indices, *glabels;
@@ -613,11 +613,11 @@ nnlabel(Mat &_feat, Var **_vars, const Mat &_easyclouds,
 		}
 	}
 	_feat = _feat.rowRange(0, k);
-	logprintf("nnlabel: reduced number of features: %d\n", k);
+	logprintf("labelnbrs: reduced number of features: %d\n", k);
 	
-	logprintf("nnlabel: building nearest neighbor indices...\n");
+	logprintf("labelnbrs: building nearest neighbor indices...\n");
 	flann::Index idx(_feat, flann::KMeansIndexParams(16, 1));
-	logprintf("nnlabel: searching nearest neighbor indices...\n");
+	logprintf("labelnbrs: searching nearest neighbor indices...\n");
 	
 	// dilate all the clusters
 	dilate(_glabels >= 0, _labdil, getStructuringElement(MORPH_RECT, Size(21, 21)));
@@ -654,7 +654,7 @@ nnlabel(Mat &_feat, Var **_vars, const Mat &_easyclouds,
 				glabels[i] = glabels[indices[ind[0]]];
 		}
 	}
-	logprintf("nnlabel: done searching nearest neighbors\n");
+	logprintf("labelnbrs: done searching nearest neighbors\n");
 
 	// TODO: erode glabels by 21, but not where sstmag < GRAD_LOW
 }
@@ -748,19 +748,19 @@ writespt(int ncid, const Mat &spt)
 // stdf -- stdfilter(sst - medianBlur(sst))
 // ncc -- number of connected components labeled in glabels
 // glabels -- cluster labels before nearest neighbor lookup
-// glabels_nn -- cluster labels after nearest neighbor lookup
+// glabelsnn -- cluster labels after nearest neighbor lookup
 // easyclouds -- easy clouds
 // fronts -- thermal fronts (output)
 //
 static void
 findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
-	const Mat &_deltamag, const Mat &_glabels, const Mat &_glabels_nn,
+	const Mat &_deltamag, const Mat &_glabels, const Mat &_glabelsnn,
 	const Mat &easyclouds, const Mat &_apm, Mat &_fronts)
 {
 	Mat _dilc, _dilq;
 	float *lam2, *sstmag, *stdf, *deltamag;
 	double m, llam, lmag, lstdf, ldel;
-	int i, *glabels, *glabels_nn;
+	int i, *glabels, *glabelsnn;
 	uchar *dilc, *apm;
 	schar *fronts;
 	
@@ -769,7 +769,7 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 	CHECKMAT(_stdf, CV_32FC1);
 	CHECKMAT(_deltamag, CV_32FC1);
 	CHECKMAT(_glabels, CV_32SC1);
-	CHECKMAT(_glabels_nn, CV_32SC1);
+	CHECKMAT(_glabelsnn, CV_32SC1);
 	CHECKMAT(easyclouds, CV_8UC1);
 	CHECKMAT(_apm, CV_8UC1);
 	_fronts.create(_glabels.size(), CV_8SC1);
@@ -779,7 +779,7 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 	stdf = (float*)_stdf.data;
 	deltamag = (float*)_deltamag.data;
 	glabels = (int*)_glabels.data;
-	glabels_nn = (int*)_glabels_nn.data;
+	glabelsnn = (int*)_glabelsnn.data;
 	fronts = (schar*)_fronts.data;
 	apm = _apm.data;
 	
@@ -801,7 +801,7 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 		
 		// continue if in (dilated) easyclouds
 		// or not in domain added by nearest neighbor
-		if(dilc[i] || glabels_nn[i] < 0 || glabels[i] >= 0)
+		if(dilc[i] || glabelsnn[i] < 0 || glabels[i] >= 0)
 			continue;
 
 		if(apm[i] && sstmag[i] > 0.1 && sstmag[i]/deltamag[i] > 10){
@@ -1161,7 +1161,7 @@ main(int argc, char **argv)
 {
 	Mat sst, cmc, bil, anomaly, lat, lon, m14, m15, m16, medf, stdf, blurf,
 		acspo, acspo1, dX, dY, sstmag, delta, omega, albedo, BQ, DQ,
-		glabels, glabels_nn, feat, lam1, lam2, apm,
+		glabels, glabelsnn, feat, lam1, lam2, apm,
 		easyclouds, easyfronts, fronts, adjclust, spt, spt1, diff;
 	int ncid, n, nclust;
 	char *path;
@@ -1249,19 +1249,19 @@ SAVENC(apm);
 	nclust = cluster(qoutput[0], qoutput[1], vars, glabels, feat);
 SAVENC(glabels);
 
-	glabels_nn = glabels.clone();
-	nnlabel(feat, vars, easyclouds, sstmag, glabels_nn);
-SAVENC(glabels_nn);
+	glabelsnn = glabels.clone();
+	labelnbrs(feat, vars, easyclouds, sstmag, glabelsnn);
+SAVENC(glabelsnn);
 	
 	logprintf("finding thermal fronts...\n");
-	findfronts(lam2, sstmag, stdf, deltamag, glabels, glabels_nn, easyclouds, apm, fronts);
+	findfronts(lam2, sstmag, stdf, deltamag, glabels, glabelsnn, easyclouds, apm, fronts);
 
 	logprintf("finding clusters adjacent to fronts...\n");
-	findadjacent(dY, dX, sstmag, nclust, glabels_nn, acspo, 5, fronts, adjclust);
+	findadjacent(dY, dX, sstmag, nclust, glabelsnn, acspo, 5, fronts, adjclust);
 SAVENC(fronts);
 
 	logprintf("creating spt mask...\n");
-	getspt(r, acspo, glabels_nn, adjclust, fronts, spt);
+	getspt(r, acspo, glabelsnn, adjclust, fronts, spt);
 SAVENC(spt);
 
 	logprintf("saving spt mask...\n");
