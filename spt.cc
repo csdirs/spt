@@ -176,7 +176,7 @@ quantize(int n, Var **src, const Mat &_omega, const Mat &_sstmag,
 {
 	int i, k;
 	bool ok;
-	float *omega, *gm, *deltamag;
+	float *omega, *sstmag, *deltamag;
 	
 	CV_Assert(n > 0);
 	Size size = src[0]->mat.size();
@@ -192,12 +192,12 @@ quantize(int n, Var **src, const Mat &_omega, const Mat &_sstmag,
 	CHECKMAT(_sstmag, CV_32FC1);
 	CHECKMAT(_deltamag, CV_32FC1);
 	omega = (float*)_omega.data;
-	gm = (float*)_sstmag.data;
+	sstmag = (float*)_sstmag.data;
 	deltamag = (float*)_deltamag.data;
 	
 	// quantize variables
 	for(i = 0; i < (int)size.area(); i++){
-		if(gm[i] > GRAD_LOW		// || delta[i] < -0.5
+		if(sstmag[i] > GRAD_LOW		// || delta[i] < -0.5
 		|| deltamag[i] > DELTAMAG_LOW
 		|| (omega[i] < OMEGA_LOW || omega[i] > OMEGA_HIGH))
 			continue;
@@ -562,16 +562,16 @@ writespt(int ncid, const Mat &spt)
 	
 	CHECKMAT(spt, CV_8UC1);
 	
-	const char VAR_NAME[] = "spt_mask";
-	const char VAR_UNITS[] = "none";
-	const char VAR_DESCR[] = "SPT mask packed into 1 byte: bits1-2 (00=clear; 01=probably clear; 10=cloudy; 11=clear-sky mask undefined); bit3 (0=no thermal front; 1=thermal front)";
+	const char varname[] = "spt_mask";
+	const char varunits[] = "none";
+	const char vardescr[] = "SPT mask packed into 1 byte: bits1-2 (00=clear; 01=probably clear; 10=cloudy; 11=clear-sky mask undefined); bit3 (0=no thermal front; 1=thermal front)";
 
 	// chunk sizes used by acspo_mask
 	const size_t chunksizes[] = {1024, 3200};
 	
 	// It's not possible to delete a NetCDF variable, so attempt to use
 	// the variable if it already exists. Create the variable if it does not exist.
-	n = nc_inq_varid(ncid, VAR_NAME, &varid);
+	n = nc_inq_varid(ncid, varname, &varid);
 	if(n != NC_NOERR){
 		n = nc_inq_dimid(ncid, "scan_lines_along_track", &dimids[0]);
 		if(n != NC_NOERR)
@@ -581,7 +581,7 @@ writespt(int ncid, const Mat &spt)
 		if(n != NC_NOERR)
 			ncfatal(n, "nc_inq_dimid failed");
 		
-		n = nc_def_var(ncid, VAR_NAME, NC_UBYTE, nelem(dimids), dimids, &varid);
+		n = nc_def_var(ncid, varname, NC_UBYTE, nelem(dimids), dimids, &varid);
 		if(n != NC_NOERR)
 			ncfatal(n, "nc_def_var failed");
 		n = nc_def_var_chunking(ncid, varid, NC_CHUNKED, chunksizes);
@@ -591,10 +591,10 @@ writespt(int ncid, const Mat &spt)
 		if(n != NC_NOERR)
 			ncfatal(n, "setting deflate parameters failed");
 		
-		n = nc_put_att_text(ncid, varid, "UNITS", nelem(VAR_UNITS)-1, VAR_UNITS);
+		n = nc_put_att_text(ncid, varid, "UNITS", nelem(varunits)-1, varunits);
 		if(n != NC_NOERR)
 			ncfatal(n, "setting attribute UNITS failed");
-		n = nc_put_att_text(ncid, varid, "Description", nelem(VAR_DESCR)-1, VAR_DESCR);
+		n = nc_put_att_text(ncid, varid, "Description", nelem(vardescr)-1, vardescr);
 		if(n != NC_NOERR)
 			ncfatal(n, "setting attribute Description failed");
 	}
