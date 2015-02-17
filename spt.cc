@@ -1013,18 +1013,21 @@ plusminus(const Mat &_src, Mat &_dst)
 	
 	enum {
 		wsize = 11,
-		maxsum = wsize*wsize,
+		maxsum = +wsize*wsize,
+		minsum = -wsize*wsize,
 	};
 	const double thresh = 0.3*maxsum;
 	
 	src = (float*)_src.data;
 	tmp = (float*)_tmp.data;
 	
-	// run box filter on image containing (-1, 1, 99)
+	// run box filter on image containing {-1, 1, inf}
 	for(int i = 0; i < (int)_src.total(); i++){
-		if(isnan(src[i]))
-			tmp[i] = maxsum+1;
-		else if(src[i] < 0)
+		if(isnan(src[i])){
+			// large enough so that the sum within a window
+			// is greater than maxsum
+			tmp[i] = -minsum+maxsum+1;
+		}else if(src[i] < 0)
 			tmp[i] = -1;
 		else
 			tmp[i] = 1;
