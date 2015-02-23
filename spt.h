@@ -32,6 +32,7 @@ using namespace cv;
 #define OMEGA_HIGH 0
 #define ANOMALY_HIGH 10
 #define ANOMALY_LOW -10
+#define ANOMALY_THRESH -8
 #define ALBEDO_LOW 3
 #define ALBEDO_HIGH 4
 #define EDGE_THRESH 1
@@ -119,3 +120,4 @@ void	gradientmag(const Mat &src, Mat &dst, Mat &dX, Mat &dY);
 void	gradientmag(const Mat &src, Mat &dst);
 void	localmax(const Mat &sstmag, Mat &high, Mat &low, int sigma);
 void	stdfilter(const Mat &src, Mat &dst, int ksize);
+void	rangefilter(const Mat &src, Mat &dst, int ksize);

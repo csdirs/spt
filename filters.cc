@@ -161,3 +161,20 @@ stdfilter(const Mat &src, Mat &dst, int ksize)
 	}
 	sqrt(_tmp, dst);
 }
+
+// Range filter.
+//
+// src -- source image
+// dst -- destination image (output)
+// ksize -- kernel size
+//
+void
+rangefilter(const Mat &src, Mat &dst, int ksize)
+{
+	Mat min, max;
+	
+	Mat elem = getStructuringElement(MORPH_RECT, Size(ksize, ksize));
+	erode(src, min, elem);
+	dilate(src, max, elem);
+	dst = max - min;
+}

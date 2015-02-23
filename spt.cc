@@ -337,6 +337,14 @@ clusterbin(Size size, int v1, int v2, const short *q1, const short *q2,
 		}
 	}
 
+/*
+TODO:
+where ACSPO says water: (acspo>>6) == 0,
+create 2D histogram of SST vs. Delta
+remove clusters for which (average SST, average delta)
+fall in a low dense area in the histogram
+*/
+
 	// compute features for each variables
 	for(i = 0; i < size.area(); i++){
 		lab = cclabels[i];
@@ -1042,7 +1050,7 @@ plusminus(const Mat &_src, Mat &_dst)
 int
 main(int argc, char **argv)
 {
-	Mat dX, dY, sstmag, deltamag, lam1, lam2,
+	Mat dX, dY, sstmag, deltamag, deltarange, lam1, lam2,
 		medf, stdf, blurf,
 		sstbil, deltabil, apm,
 		glabels, glabelsnn, feat, BQ, DQ,
@@ -1079,6 +1087,7 @@ SAVENC(albedo);
 	Mat anomaly = sst - cmc;
 	gradientmag(sst, sstmag, dX, dY);
 	gradientmag(delta, deltamag);
+	rangefilter(delta, deltarange, 7);
 	localmax(sstmag, lam2, lam1, 1);
 SAVENC(m15);
 SAVENC(m16);
@@ -1087,13 +1096,14 @@ SAVENC(omega);
 SAVENC(anomaly);
 SAVENC(sstmag);
 SAVENC(deltamag);
+SAVENC(deltarange);
 SAVENC(lam2);
 
 	logprintf("computing easyclouds...\n");
 	medianBlur(sst, medf, 5);
 	stdfilter(sst-medf, stdf, 7);
 	//nanblur(sst, blurf, 7);
-	Mat easyclouds = (sst < SST_LOW) | (stdf > STD_THRESH);
+	Mat easyclouds = (sst < SST_LOW) | (stdf > STD_THRESH) | (deltarange > 0.5);
 		//| (abs(sst - blurf) > EDGE_THRESH);
 	//Mat easyfronts = (sst > SST_LOW) & (sstmag > 0.5)
 	//	& (stdf < STD_THRESH) & (lam2 < -0.05);
@@ -1108,6 +1118,9 @@ SAVENC(easyclouds);
 	plusminus(bilanom, apm);
 SAVENC(sstbil);
 SAVENC(apm);
+
+	easyclouds |= (sst-bilanom)-cmc < ANOMALY_THRESH;
+if(DEBUG) savenc("easyclouds_new.nc", easyclouds);
 
 	logprintf("quantizing variables...\n");
 	Var *qinput[] = {new BilAnom(bilanom), new Delta(delta)};
