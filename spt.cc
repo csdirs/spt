@@ -171,12 +171,14 @@ public:
 // dst -- destination where quantized images are stored (output)
 //
 static void
-quantize(int n, Var **src, const Mat &_omega, const Mat &_sstmag,
+quantize(int n, Var **src, const Mat &_easyclouds, const Mat &_deltarange,
+	const Mat &_omega, const Mat &_sstmag,
 	const Mat &_deltamag, QVar **dst)
 {
 	int i, k;
 	bool ok;
-	float *omega, *sstmag, *deltamag;
+	uchar *easyclouds;
+	float *deltarange, *omega, *sstmag, *deltamag;
 	
 	CV_Assert(n > 0);
 	Size size = src[0]->mat.size();
@@ -188,16 +190,22 @@ quantize(int n, Var **src, const Mat &_omega, const Mat &_sstmag,
 		dst[k]->mat = Scalar(-1);
 	}
 	
+	CHECKMAT(_easyclouds, CV_8UC1);
+	CHECKMAT(_deltarange, CV_32FC1);
 	CHECKMAT(_omega, CV_32FC1);
 	CHECKMAT(_sstmag, CV_32FC1);
 	CHECKMAT(_deltamag, CV_32FC1);
+	easyclouds = _easyclouds.data;
+	deltarange = (float*)_deltarange.data;
 	omega = (float*)_omega.data;
 	sstmag = (float*)_sstmag.data;
 	deltamag = (float*)_deltamag.data;
 	
 	// quantize variables
 	for(i = 0; i < (int)size.area(); i++){
-		if(sstmag[i] > GRAD_LOW		// || delta[i] < -0.5
+		if(easyclouds[i]
+		|| deltarange[i] > DELTARANGE_THRESH
+		|| sstmag[i] > 0.5		// || delta[i] < -0.5
 		|| deltamag[i] > DELTAMAG_LOW
 		|| (omega[i] < OMEGA_LOW || omega[i] > OMEGA_HIGH))
 			continue;
@@ -690,7 +698,7 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 		
 		// continue if in (dilated) easyclouds
 		// or not in domain added by nearest neighbor
-		if(dilc[i] || glabelsnn[i] < 0 || glabels[i] >= 0)
+		if(dilc[i])	// || glabelsnn[i] < 0 || glabels[i] >= 0)
 			continue;
 
 		// detect front based on sstmag, deltamag, anomaly
@@ -1047,6 +1055,20 @@ plusminus(const Mat &_src, Mat &_dst)
 	_dst = (-thresh <= _tmp) & (_tmp <= thresh);
 }
 
+void
+groweasyclouds(Mat &easyclouds, const Mat &deltarange)
+{
+	Mat dil;
+	
+	Mat selem = getStructuringElement(MORPH_RECT, Size(5, 5));
+	Mat bigrange = deltarange > DELTARANGE_THRESH;
+	
+	for(int i = 0; i < 10; i++){
+		dilate(easyclouds, dil, selem);
+		easyclouds |= dil & bigrange;
+	}
+}
+
 int
 main(int argc, char **argv)
 {
@@ -1103,8 +1125,10 @@ SAVENC(lam2);
 	medianBlur(sst, medf, 5);
 	stdfilter(sst-medf, stdf, 7);
 	//nanblur(sst, blurf, 7);
-	Mat easyclouds = (sst < SST_LOW) | (stdf > STD_THRESH) | (deltarange > 0.5);
+	Mat easyclouds = (sst < SST_LOW) | (stdf > STD_THRESH);
+		//| (deltarange > 0.5);
 		//| (abs(sst - blurf) > EDGE_THRESH);
+	groweasyclouds(easyclouds, deltarange);
 	//Mat easyfronts = (sst > SST_LOW) & (sstmag > 0.5)
 	//	& (stdf < STD_THRESH) & (lam2 < -0.05);
 SAVENC(medf);
@@ -1119,13 +1143,13 @@ SAVENC(easyclouds);
 SAVENC(sstbil);
 SAVENC(apm);
 
-	easyclouds |= (sst-bilanom)-cmc < ANOMALY_THRESH;
-if(DEBUG) savenc("easyclouds_new.nc", easyclouds);
+//	easyclouds |= (sst-bilanom)-cmc < ANOMALY_THRESH;
+//if(DEBUG) savenc("easyclouds_new.nc", easyclouds);
 
 	logprintf("quantizing variables...\n");
 	Var *qinput[] = {new BilAnom(bilanom), new Delta(delta)};
 	QVar *qoutput[] = {new QVar(BQ), new QVar(DQ)};
-	quantize(nelem(qinput), qinput, omega, sstmag, deltamag, qoutput);
+	quantize(nelem(qinput), qinput, easyclouds, deltarange, omega, sstmag, deltamag, qoutput);
 	BQ = qoutput[0]->mat;
 	DQ = qoutput[1]->mat;
 
