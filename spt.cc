@@ -102,10 +102,10 @@ public:
 	};
 };
 
-class BilAnom : public Var
+class SSTAnom : public Var
 {
 public:
-	BilAnom(Mat &m) {
+	SSTAnom(Mat &m) {
 		mat = m;
 		min = -999;
 		max = 999;
@@ -651,13 +651,12 @@ writespt(int ncid, const Mat &spt)
 //
 static void
 findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
-	const Mat &_deltamag, const Mat &_glabels, const Mat &_glabelsnn,
-	const Mat &easyclouds, const Mat &_apm, Mat &_fronts)
+	const Mat &_deltamag, const Mat &easyclouds, const Mat &_apm, Mat &_fronts)
 {
 	Mat _dilc, _dilq;
 	float *lam2, *sstmag, *stdf, *deltamag;
 	double m, llam, lmag, lstdf, ldel;
-	int i, *glabels, *glabelsnn;
+	int i;
 	uchar *dilc, *apm;
 	schar *fronts;
 	
@@ -665,18 +664,14 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 	CHECKMAT(_sstmag, CV_32FC1);
 	CHECKMAT(_stdf, CV_32FC1);
 	CHECKMAT(_deltamag, CV_32FC1);
-	CHECKMAT(_glabels, CV_32SC1);
-	CHECKMAT(_glabelsnn, CV_32SC1);
 	CHECKMAT(easyclouds, CV_8UC1);
 	CHECKMAT(_apm, CV_8UC1);
-	_fronts.create(_glabels.size(), CV_8SC1);
+	_fronts.create(_sstmag.size(), CV_8SC1);
 	
 	lam2 = (float*)_lam2.data;
 	sstmag = (float*)_sstmag.data;
 	stdf = (float*)_stdf.data;
 	deltamag = (float*)_deltamag.data;
-	glabels = (int*)_glabels.data;
-	glabelsnn = (int*)_glabelsnn.data;
 	fronts = (schar*)_fronts.data;
 	apm = _apm.data;
 	
@@ -693,7 +688,7 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 	dilq = (float*)_dilq.data;
 */
 	// compute thermal fronts image
-	for(i = 0; i < (int)_glabels.total(); i++){
+	for(i = 0; i < (int)_sstmag.total(); i++){
 		fronts[i] = FRONT_INVALID;
 		
 		// continue if in (dilated) easyclouds
@@ -728,25 +723,24 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 }
 
 void
-dilatefronts(const Mat &_fronts, const Mat &_sstmag, const Mat &_easyclouds, Mat &dst)
+dilatefronts(const Mat &fronts, const Mat &_sstmag, const Mat &_easyclouds, Mat &dst)
 {
 	Mat _tmp, _bigfronts;
 	
-	CHECKMAT(_fronts, CV_8SC1);
+	CHECKMAT(fronts, CV_8SC1);
 	CHECKMAT(_sstmag, CV_32FC1);
 	CHECKMAT(_easyclouds, CV_8UC1);
-	_tmp.create(_fronts.size(), CV_32FC1);
+	_tmp.create(fronts.size(), CV_32FC1);
 	
-	char *fronts = (char*)_fronts.data;
 	float *sstmag = (float*)_sstmag.data;
 	uchar *easyclouds = _easyclouds.data;
 	float *tmp = (float*)_tmp.data;
 
-	connectedComponentsWithLimit(_fronts==FRONT_INIT, 8, 9, _bigfronts);
+	connectedComponentsWithLimit(fronts==FRONT_INIT, 8, 9, _bigfronts);
 	CHECKMAT(_bigfronts, CV_32SC1);
 	int *bigfronts = (int*)_bigfronts.data;
 	
-	for(int i = 0; i < (int)_fronts.total(); i++){
+	for(int i = 0; i < (int)fronts.total(); i++){
 		if(sstmag[i] < 0.1 || easyclouds[i])
 			tmp[i] = -1;
 		else if(bigfronts[i] >= 0)
@@ -754,7 +748,6 @@ dilatefronts(const Mat &_fronts, const Mat &_sstmag, const Mat &_easyclouds, Mat
 		else
 			tmp[i] = 0;
 	}
-if(DEBUG) savenc("dilfrontssrc", _tmp);
 	dilate(_tmp, dst, getStructuringElement(MORPH_RECT, Size(21, 21)));
 
 	connectedComponentsWithLimit((dst==1) & (_sstmag > 0.1) & (_easyclouds == 0), 8, 200, dst);
@@ -1012,34 +1005,34 @@ getspt(const Resample *r, const Mat &_acspo, const Mat &_clust,
 
 // Bilateral filter wrapper.
 static void
-sstbilateral(const Mat &_sst, const Mat &_easyclouds, Mat &_dst, double sigma_color, double sigma_space)
+bilateral(const Mat &_src, const Mat &_easyclouds, Mat &_dst, double high, double sigmacolor, double sigmaspace)
 {
 	int i;
-	Mat _src;
-	float *sst, *src, *dst;
+	Mat _tmp;
+	float *src, *tmp, *dst;
 	uchar *easyclouds;
 
+	CHECKMAT(_src, CV_32FC1);
 	CHECKMAT(_easyclouds, CV_8UC1);
-	CHECKMAT(_sst, CV_32FC1);
-	_src = _sst.clone();	// TODO: copy necessary here?
+	_tmp = _src.clone();
 	
 	easyclouds = _easyclouds.data;
-	sst = (float*)_sst.data;
 	src = (float*)_src.data;
+	tmp = (float*)_tmp.data;
 	
-	for(i = 0; i < (int)_sst.total(); i++){
+	for(i = 0; i < (int)_src.total(); i++){
 		if(easyclouds[i])
-			src[i] = -1;
-		else if(sst[i] > SST_HIGH)
-			src[i] = SST_HIGH;
+			tmp[i] = -1;
+		else if(src[i] > high)
+			tmp[i] = high;
 	}
 	// TODO: check if OpenCV's bilateralFilter is fast enough for us
 	// and can replace this function.
-	cv_extend::bilateralFilter(_src, _dst, sigma_color, sigma_space);
+	cv_extend::bilateralFilter(_tmp, _dst, sigmacolor, sigmaspace);
 
 	CHECKMAT(_dst, CV_32FC1);
 	dst = (float*)_dst.data;
-	for(i = 0; i < (int)_sst.total(); i++){
+	for(i = 0; i < (int)_src.total(); i++){
 		if(easyclouds[i])
 			dst[i] = NAN;
 	}
@@ -1107,7 +1100,7 @@ main(int argc, char **argv)
 {
 	Mat dX, dY, sstmag, deltamag, deltarange, lam1, lam2,
 		medf, stdf, blurf,
-		sstbil, deltabil, apm,
+		sstbil, deltabil, sstpm, deltapm,
 		glabels, glabelsnn, feat, BQ, DQ,
 		fronts, adjclust, spt, diff;
 	int ncid, n, nclust;
@@ -1139,7 +1132,6 @@ SAVENC(albedo);
 	logprintf("computing sstmag, etc....\n");
 	Mat delta = m15 - m16;
 	Mat omega = m14 - m15;
-	Mat anomaly = sst - cmc;
 	gradientmag(sst, sstmag, dX, dY);
 	gradientmag(delta, deltamag);
 	rangefilter(delta, deltarange, 7);
@@ -1148,7 +1140,6 @@ SAVENC(m15);
 SAVENC(m16);
 SAVENC(delta);
 SAVENC(omega);
-SAVENC(anomaly);
 SAVENC(sstmag);
 SAVENC(deltamag);
 SAVENC(deltarange);
@@ -1169,18 +1160,23 @@ SAVENC(stdf);
 SAVENC(easyclouds);
 	
 	logprintf("computing anomaly plus/minus...\n");
-	sstbilateral(sst, easyclouds, sstbil, 3, 200);
-	//sstbilateral(delta, easyclouds, deltabil, 0.5, 200);
-	Mat bilanom = sst-sstbil;
-	plusminus(bilanom, apm);
+	bilateral(sst, easyclouds, sstbil, SST_HIGH, 3, 200);
+	Mat sstanom = sst - sstbil;
+	plusminus(sstanom, sstpm);
 SAVENC(sstbil);
-SAVENC(apm);
+SAVENC(sstpm);
 
-//	easyclouds |= (sst-bilanom)-cmc < ANOMALY_THRESH;
+//	bilateral(delta, easyclouds, deltabil, DELTA_HIGH, 0.1, 200);
+//	Mat deltaanom = delta - deltabil;
+//	plusminus(deltaanom, deltapm);
+//SAVENC(deltabil);
+//SAVENC(deltapm);
+
+//	easyclouds |= (sst-sstanom)-cmc < ANOMALY_THRESH;
 //if(DEBUG) savenc("easyclouds_new.nc", easyclouds);
 
 	logprintf("quantizing variables...\n");
-	Var *qinput[] = {new BilAnom(bilanom), new Delta(delta)};
+	Var *qinput[] = {new SSTAnom(sstanom), new Delta(delta)};
 	QVar *qoutput[] = {new QVar(BQ), new QVar(DQ)};
 	quantize(nelem(qinput), qinput, easyclouds, deltarange, omega, sstmag, deltamag, qoutput);
 	BQ = qoutput[0]->mat;
@@ -1202,7 +1198,7 @@ SAVENC(glabels);
 SAVENC(glabelsnn);
 	
 	logprintf("finding thermal fronts...\n");
-	findfronts(lam2, sstmag, stdf, deltamag, glabels, glabelsnn, easyclouds, apm, fronts);
+	findfronts(lam2, sstmag, stdf, deltamag, easyclouds, sstpm, fronts);
 
 	Mat dilfronts;
 	dilatefronts(fronts, sstmag, easyclouds, dilfronts);
