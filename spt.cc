@@ -727,6 +727,39 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 	}
 }
 
+void
+dilatefronts(const Mat &_fronts, const Mat &_sstmag, const Mat &_easyclouds, Mat &dst)
+{
+	Mat _tmp, _bigfronts;
+	
+	CHECKMAT(_fronts, CV_8SC1);
+	CHECKMAT(_sstmag, CV_32FC1);
+	CHECKMAT(_easyclouds, CV_8UC1);
+	_tmp.create(_fronts.size(), CV_32FC1);
+	
+	char *fronts = (char*)_fronts.data;
+	float *sstmag = (float*)_sstmag.data;
+	uchar *easyclouds = _easyclouds.data;
+	float *tmp = (float*)_tmp.data;
+
+	connectedComponentsWithLimit(_fronts==FRONT_INIT, 8, 9, _bigfronts);
+	CHECKMAT(_bigfronts, CV_32SC1);
+	int *bigfronts = (int*)_bigfronts.data;
+	
+	for(int i = 0; i < (int)_fronts.total(); i++){
+		if(sstmag[i] < 0.1 || easyclouds[i])
+			tmp[i] = -1;
+		else if(bigfronts[i] >= 0)
+			tmp[i] = 1;
+		else
+			tmp[i] = 0;
+	}
+if(DEBUG) savenc("dilfrontssrc", _tmp);
+	dilate(_tmp, dst, getStructuringElement(MORPH_RECT, Size(21, 21)));
+
+	connectedComponentsWithLimit((dst==1) & (_sstmag > 0.1) & (_easyclouds == 0), 8, 200, dst);
+}
+
 // Narrow down the number of thermal fronts and find clusters that are
 // adjacent to those fronts.
 //
@@ -1170,6 +1203,10 @@ SAVENC(glabelsnn);
 	
 	logprintf("finding thermal fronts...\n");
 	findfronts(lam2, sstmag, stdf, deltamag, glabels, glabelsnn, easyclouds, apm, fronts);
+
+	Mat dilfronts;
+	dilatefronts(fronts, sstmag, easyclouds, dilfronts);
+SAVENC(dilfronts);
 
 	logprintf("finding clusters adjacent to fronts...\n");
 	findadjacent(dY, dX, sstmag, nclust, glabelsnn, acspo, 5, fronts, adjclust);
