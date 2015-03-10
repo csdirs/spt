@@ -12,6 +12,12 @@ The size of restoration |R| should not be greater than |F|**2
 
 */
 
+/*
+ * TODO: relabels the fronts:
+ * fronts = fronts * [dilated fronts]
+ * Then, remove smalls fronts by connected components, etc.
+ */
+
 #include "spt.h"
 #include "fastBilateral.hpp"
 
@@ -25,13 +31,16 @@ enum {
 };
 
 // front statistics
-enum {
-	FSTAT_SIZE,	// front size in pixels
-	FSTAT_LSIZE,	// left side size
-	FSTAT_RSIZE,	// right side size
-	FSTAT_SUMMAG,	// SST gradient magnitude sum
-	FSTAT_OK,	// do we want this front?
-	NFSTAT,
+typedef struct FrontStat FrontStat;
+struct FrontStat {
+	int size;	// front size in pixels
+	double sstmag;	// average SST gradient magnitude
+	
+	int lsize, rsize;	// size of left and right sides
+	double lsst, rsst;	// average SST of left and right sides
+	double ldelta, rdelta;	// average delta of left and right sides
+
+	bool ok;		// do we want this front?
 };
 
 // thernal fronts and their sides
@@ -43,6 +52,18 @@ enum {
 	FRONT_LEFT,	// left side
 	FRONT_RIGHT,	// right side
 };
+
+void
+frontstatsmat(vector<FrontStat> &v, Mat &dst)
+{
+	dst.create(v.size(), 4, CV_32FC1);
+	for(int i = 0; i < (int)v.size(); i++){
+		dst.at<float>(i, 0) = v[i].lsst;
+		dst.at<float>(i, 1) = v[i].rsst;
+		dst.at<float>(i, 2) = v[i].ldelta;
+		dst.at<float>(i, 3) = v[i].rdelta;
+	}
+}
 
 class Var	// variable
 {
@@ -722,6 +743,43 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 	}
 }
 
+/*
+void
+connectfronts(const Mat &fronts, const Mat &dX, const Mat &dY,
+	const Mat &_sstmag, const Mat &_easyclouds, Mat &dst)
+{
+	enum {
+		W = 21;
+		Mid = W*(W/2) + (W/2);
+	};
+	
+	i = 0;
+	for(y = 0; y < fronts.rows; y++){
+		for(x = 0; x < fronts.cols; x++){
+			// Not initial front or the whole window doesn't fit in the image
+			if(fronts[i] != FRONT_INIT
+			|| y+W > fronts.rows || x+W > fronts.cols)
+				continue;
+			
+			cdY = dY[i + Mid];
+			cdX = dX[i + Mid];
+			k = i;
+			max = 0;
+			for(yy = y; yy < y+W; yy++){
+				for(xx = x; xx < x+W; xx++){
+					sim = dY[k]*cdY + dX[k]*cdX;
+					if(sim > m)
+						newfronts[i] = FRONT_INIT;
+					k++;
+				}
+				k += fronts.cols - W;
+			}
+			i++;
+		}
+	}
+}
+*/
+
 void
 dilatefronts(const Mat &fronts, const Mat &_sstmag, const Mat &_easyclouds, Mat &dst)
 {
@@ -767,47 +825,51 @@ dilatefronts(const Mat &fronts, const Mat &_sstmag, const Mat &_easyclouds, Mat 
 // _adjclust -- mask indicated if the a cluster is adjacent to a front (output)
 //
 static void
-findadjacent(const Mat &_dy, const Mat &_dx, const Mat &_sstmag,
-	int nclust, const Mat &_clust, const Mat &_acspo, double alpha,
+findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag,
+	const Mat &_delta, int nclust, const Mat &_clust, const Mat &_acspo, double alpha,
 	Mat &_fronts, Mat &_adjclust)
 {
-	Mat _cclabels, _fstats;
-	int i, j, *p, nfront, y, x, k, left, right, *cclabels, *clust;
-	schar *fronts;
-	float *dy, *dx, *sstmag;
-	double dy1, dx1, *fstats, *fs, t;
-	uchar *acspo, *adjclust;
+	Mat _cclabels;
+	int *p, nfront, y, x, k, left, right, *cclabels;
+	double dy1, dx1, t;
+	uchar *adjclust;
 	
+	CHECKMAT(_sst, CV_32FC1);
 	CHECKMAT(_dy, CV_32FC1);
 	CHECKMAT(_dx, CV_32FC1);
 	CHECKMAT(_sstmag, CV_32FC1);
+	CHECKMAT(_delta, CV_32FC1);
 	CHECKMAT(_clust, CV_32SC1);
 	CHECKMAT(_acspo, CV_8UC1);
 	CHECKMAT(_fronts, CV_8SC1);
-	dy = (float*)_dy.data;
-	dx = (float*)_dx.data;
-	sstmag = (float*)_sstmag.data;
-	clust = (int*)_clust.data;
-	acspo = (uchar*)_acspo.data;
-	fronts = (schar*)_fronts.data;
+	float *sst = (float*)_sst.data;
+	float *dy = (float*)_dy.data;
+	float *dx = (float*)_dx.data;
+	float *sstmag = (float*)_sstmag.data;
+	float *delta = (float*)_delta.data;
+	int *clust = (int*)_clust.data;
+	uchar *acspo = (uchar*)_acspo.data;
+	schar *fronts = (schar*)_fronts.data;
 	
 	// initialize output in case we bail early (e.g. if nfront <= 0)
 	_adjclust = Mat::zeros(nclust, 1, CV_8UC1);
 	
 	// run connected components on fronts, eliminating small fronts
-	nfront = connectedComponentsWithLimit(_fronts==FRONT_INIT, 8, 50, _cclabels);
+	nfront = connectedComponentsWithLimit(_fronts==FRONT_INIT, 8, 200, _cclabels);
 	if(nfront <= 0)
 		return;
 	CHECKMAT(_cclabels, CV_32SC1);
 	cclabels = (int*)_cclabels.data;
 	logprintf("findadjacent: initial number of fronts: %d\n", nfront);
+	if(DEBUG)
+		savenc("frontlabels.nc", _cclabels);
 	
 	int countsize[] = {nfront, nclust};
 	SparseMat leftcount(nelem(countsize), countsize, CV_32SC1);
 	SparseMat rightcount(nelem(countsize), countsize, CV_32SC1);
 
-	_fstats = Mat::zeros(nfront, NFSTAT, CV_64FC1);
-	fstats = (double*)_fstats.data;
+	vector<FrontStat> fstats(nfront);
+	memset(&fstats[0], 0, sizeof(FrontStat)*fstats.size());
 	
 	// find left and right sides of the fronts, and their statistics
 	k = 0;
@@ -827,19 +889,24 @@ findadjacent(const Mat &_dy, const Mat &_dx, const Mat &_sstmag,
 			right = k - dx1*_fronts.cols + dy1;
 			
 			// compute statistics of front
-			fs = &fstats[NFSTAT * cclabels[k]];
-			fs[FSTAT_SIZE]++;
-			fs[FSTAT_SUMMAG] += sstmag[k];
+			FrontStat &fs = fstats[cclabels[k]];
+			fs.size++;
+			fs.sstmag += sstmag[k];
+			
 			fronts[k] = FRONT_BIG;
 			if(0 <= left && left < (int)_fronts.total()
 			&& (clust[left] >= 0 || (acspo[left]&MaskLand) != 0)){
-				fs[FSTAT_LSIZE]++;
+				fs.lsize++;
+				fs.lsst += sst[left];
+				fs.ldelta += delta[left];
 				fronts[left] = FRONT_LEFT;
 				(*(int*)leftcount.ptr(cclabels[k], clust[left], true))++;
 			}
 			if(0 <= right && right < (int)_fronts.total()
 			&& (clust[right] >= 0 || (acspo[right]&MaskLand) != 0)){
-				fs[FSTAT_RSIZE]++;
+				fs.rsize++;
+				fs.rsst += sst[right];
+				fs.rdelta += delta[right];
 				fronts[right] = FRONT_RIGHT;
 				(*(int*)rightcount.ptr(cclabels[k], clust[right], true))++;
 			}
@@ -854,25 +921,38 @@ findadjacent(const Mat &_dy, const Mat &_dx, const Mat &_sstmag,
 	adjclust = _adjclust.data;
 	
 	// find which clusters are adjacent to a front
-	for(i = 0; i < nfront; i++){
-		fs = &fstats[NFSTAT * i];
-		t = 0.7*fs[FSTAT_SIZE];
-		fs[FSTAT_OK] = fs[FSTAT_LSIZE] > t && fs[FSTAT_RSIZE] > t;
-			//&& fs[FSTAT_SUMMAG]/fs[FSTAT_SIZE] > GRAD_THRESH;
+	for(int i = 0; i < nfront; i++){
+		FrontStat &fs = fstats[i];
+		fs.sstmag /= fs.size;
+		fs.lsst /= fs.lsize;
+		fs.rsst /= fs.rsize;
+		fs.ldelta /= fs.lsize;
+		fs.rdelta /= fs.rsize;
 		
-		if(!fs[FSTAT_OK])
+		t = 0.7*fs.size;
+		fs.ok = fs.lsize > t && fs.rsize > t;
+			//&& fs.sstmag > GRAD_THRESH;
+		
+		if(fs.lsst  <= fs.rsst)
+			fs.ok = fs.ok && fs.ldelta <= fs.rdelta;
+		else
+			fs.ok = fs.ok && fs.rdelta <= fs.ldelta;
+		//fs.ok = fs.ok && fabs(fs.ldelta - fs.rdelta) < 0.1;
+		
+		if(!fs.ok)
 			continue;
 		
-		for(j = 0; j < nclust; j++){
+		for(int j = 0; j < nclust; j++){
 			bool inleft = false;
 			bool inright = false;
+
 			
 			p = (int*)leftcount.ptr(i, j, false);
-			if(p && *p/(double)fs[FSTAT_LSIZE] > 0.3)
+			if(p && *p/(double)fs.lsize > 0.3)
 				inleft = true;
 
 			p = (int*)rightcount.ptr(i, j, false);
-			if(p && *p/(double)fs[FSTAT_RSIZE] > 0.3)
+			if(p && *p/(double)fs.rsize > 0.3)
 				inright = true;
 			
 			if((inleft && !inright) || (!inleft && inright))
@@ -881,14 +961,16 @@ findadjacent(const Mat &_dy, const Mat &_dx, const Mat &_sstmag,
 	}
 	
 	// set fronts that are accepted in fronts image
-	for(k = 0; k < (int)_fronts.total(); k++){
-		if(cclabels[k] < 0)
-			continue;
-		
-		fs = &fstats[NFSTAT * cclabels[k]];
-		if(fs[FSTAT_OK])
+	for(int k = 0; k < (int)_fronts.total(); k++){
+		int lab = cclabels[k];
+		if(lab >= 0 && fstats[lab].ok)
 			fronts[k] = FRONT_OK;
 	}
+
+	Mat fstatsmat;
+	frontstatsmat(fstats, fstatsmat);
+	if(DEBUG)
+		savenc("frontstats.nc", fstatsmat);
 }
 
 // Resample ACSPO cloud mask to fill in deletion zones.
@@ -1205,7 +1287,7 @@ SAVENC(glabelsnn);
 SAVENC(dilfronts);
 
 	logprintf("finding clusters adjacent to fronts...\n");
-	findadjacent(dY, dX, sstmag, nclust, glabelsnn, acspo, 5, fronts, adjclust);
+	findadjacent(sst, dY, dX, sstmag, delta, nclust, glabelsnn, acspo, 5, fronts, adjclust);
 SAVENC(fronts);
 
 	logprintf("creating spt mask...\n");
