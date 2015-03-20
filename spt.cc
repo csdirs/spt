@@ -704,7 +704,6 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 	float *_dilq = 100*(_deltamag - 0.05);
 	exp(_dilq, _dilq);
 	erode(1.0/(1+_dilq) > 0.5, _dilq, getStructuringElement(MORPH_RECT, Size(7, 7)));
-	if(DEBUG) savenc("dilq.nc", _dilq);
 	CHECKMAT(_dilq, CV_32FC1);
 	dilq = (float*)_dilq.data;
 */
@@ -894,8 +893,6 @@ findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag
 	CHECKMAT(_cclabels, CV_32SC1);
 	cclabels = (int*)_cclabels.data;
 	logprintf("findadjacent: initial number of fronts: %d\n", nfront);
-	if(DEBUG)
-		savenc("frontlabels.nc", _cclabels);
 	
 	int countsize[] = {nfront, nclust};
 	SparseMat leftcount(nelem(countsize), countsize, CV_32SC1);
@@ -1000,10 +997,11 @@ findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag
 			fronts[k] = FRONT_OK;
 	}
 
-	Mat fstatsmat;
-	frontstatsmat(fstats, fstatsmat);
-	if(DEBUG)
-		savenc("frontstats.nc", fstatsmat);
+	if(false){
+		Mat fstatsmat;
+		frontstatsmat(fstats, fstatsmat);
+		if(DEBUG) savenc("frontstats.nc", fstatsmat);
+	}
 }
 
 // Resample ACSPO cloud mask to fill in deletion zones.
@@ -1338,10 +1336,12 @@ SAVENC(spt);
 	diffcloudmask(acspo1, spt1, diff);
 SAVENC(diff);
 
-	logprintf("saving diff image as diff.png\n");
-	cvtColor(diff, diff, CV_RGB2BGR);
-	resize(diff, diff, Size(), 1/6.0, 1/6.0, INTER_AREA);
-	imwrite("diff.png", diff);
+	if(false){
+		logprintf("saving diff image as diff.png\n");
+		cvtColor(diff, diff, CV_RGB2BGR);
+		resize(diff, diff, Size(), 1/6.0, 1/6.0, INTER_AREA);
+		imwrite("diff.png", diff);
+	}
 
 	n = nc_close(ncid);
 	if(n != NC_NOERR)
