@@ -25,6 +25,7 @@ using namespace cv;
 #define GRAD_LOW 0.1
 #define DELTARANGE_THRESH 0.3
 #define DELTAMAG_LOW (GRAD_LOW/2.0)
+#define LAM2_THRESH	-0.05
 #define SST_LOW 270
 #define SST_HIGH 309
 #define DELTA_LOW -1

@@ -743,42 +743,75 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 	}
 }
 
-/*
+// Attempt to connect broken fronts by using cos-similarity of gradient vectors.
+// Each pixels within a window is compared to the pixel at the center of the
+// window.
+// Prototype: matlab/front_connect.m
+//
+// _fronts -- fronts containing only initial fronts (FRONT_INIT) (intput & output)
+// _dX -- gradient in x direction
+// _dY -- gradient in y direction
+// _sstmag -- SST gradient magnitude
+// _easyclouds -- guaranteed cloud based on various thresholds
+// lam2 -- local max
+//
 void
-connectfronts(const Mat &fronts, const Mat &dX, const Mat &dY,
-	const Mat &_sstmag, const Mat &_easyclouds, Mat &dst)
+connectfronts(Mat &_fronts, const Mat &_dX, const Mat &_dY,
+	const Mat &_sstmag, const Mat &_easyclouds, const Mat &lam2)
 {
-	enum {
-		W = 21;
-		Mid = W*(W/2) + (W/2);
-	};
+	CHECKMAT(_fronts, CV_8SC1);
+	CHECKMAT(_dX, CV_32FC1);
+	CHECKMAT(_dY, CV_32FC1);
+	CHECKMAT(_sstmag, CV_32FC1);
+	CHECKMAT(_easyclouds, CV_8UC1);
 	
-	i = 0;
-	for(y = 0; y < fronts.rows; y++){
-		for(x = 0; x < fronts.cols; x++){
-			// Not initial front or the whole window doesn't fit in the image
-			if(fronts[i] != FRONT_INIT
-			|| y+W > fronts.rows || x+W > fronts.cols)
-				continue;
-			
-			cdY = dY[i + Mid];
-			cdX = dX[i + Mid];
-			k = i;
-			max = 0;
-			for(yy = y; yy < y+W; yy++){
-				for(xx = x; xx < x+W; xx++){
-					sim = dY[k]*cdY + dX[k]*cdX;
-					if(sim > m)
-						newfronts[i] = FRONT_INIT;
-					k++;
+	char *fronts = (char*)_fronts.data;
+	float *dX = (float*)_dX.data;
+	float *dY = (float*)_dY.data;
+	
+	enum {
+		W = 21,	// window width/height
+	};
+	// pixel at center of window
+	const int mid = _fronts.cols*(W/2) + (W/2);
+	
+	for(int iter = 0; iter < 5; iter++){
+		//Mat _valid = (_fronts != FRONT_INIT) & (_sstmag > 0.05)
+		//	& (_easyclouds == 0) & (lam2 < LAM2_THRESH);
+		Mat _valid = (_fronts != FRONT_INIT);
+		CHECKMAT(_valid, CV_8UC1);
+		uchar *valid = (uchar*)_valid.data;
+		
+		int i = 0;
+		// For each pixel with full window, where the pixel
+		// is top left corner of the window
+		for(int y = 0; y < _fronts.rows-W+1; y++){
+			for(int x = 0; x < _fronts.cols-W+1; x++){
+				if(fronts[i + mid] == FRONT_INIT){
+					double cdY = dY[i + mid];
+					double cdX = dX[i + mid];
+					double max = 0;
+					int k = i;
+					int argmax = i + mid;
+					for(int yy = y; yy < y+W; yy++){
+						for(int xx = x; xx < x+W; xx++){
+							// cos-similarity
+							double sim = dY[k]*cdY + dX[k]*cdX;
+							if(valid[k] != 0 && sim > max){
+								max = sim;
+								argmax = k;
+							}
+							k++;
+						}
+						k += _fronts.cols - W;
+					}
+					fronts[argmax] = FRONT_INIT;
 				}
-				k += fronts.cols - W;
+				i++;
 			}
-			i++;
 		}
 	}
 }
-*/
 
 void
 dilatefronts(const Mat &fronts, const Mat &_sstmag, const Mat &_easyclouds, Mat &dst)
@@ -1236,7 +1269,7 @@ SAVENC(lam2);
 		//| (abs(sst - blurf) > EDGE_THRESH);
 	groweasyclouds(easyclouds, deltarange);
 	//Mat easyfronts = (sst > SST_LOW) & (sstmag > 0.5)
-	//	& (stdf < STD_THRESH) & (lam2 < -0.05);
+	//	& (stdf < STD_THRESH) & (lam2 < LAM2_THRESH);
 SAVENC(medf);
 SAVENC(stdf);
 SAVENC(easyclouds);
@@ -1281,11 +1314,15 @@ SAVENC(glabelsnn);
 	
 	logprintf("finding thermal fronts...\n");
 	findfronts(lam2, sstmag, stdf, deltamag, easyclouds, sstpm, fronts);
-
-	Mat dilfronts;
-	dilatefronts(fronts, sstmag, easyclouds, dilfronts);
-SAVENC(dilfronts);
-
+	if(DEBUG) savenc("oldfronts.nc", fronts);
+	connectfronts(fronts, dX, dY, sstmag, easyclouds, lam2);
+	if(DEBUG) savenc("connfronts.nc", fronts);
+	if(false){	
+		Mat dilfronts;
+		dilatefronts(fronts, sstmag, easyclouds, dilfronts);
+		SAVENC(dilfronts);
+	}
+	
 	logprintf("finding clusters adjacent to fronts...\n");
 	findadjacent(sst, dY, dX, sstmag, delta, nclust, glabelsnn, acspo, 5, fronts, adjclust);
 SAVENC(fronts);
