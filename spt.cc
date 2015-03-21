@@ -53,6 +53,26 @@ enum {
 	FRONT_RIGHT,	// right side
 };
 
+
+// Create a mask of where source image is NaN.
+//
+// _src -- source image
+// _dst -- NaN mask (output)
+//
+void
+nanmask(const Mat &_src, Mat &_dst)
+{
+	CHECKMAT(_src, CV_32FC1);
+	_dst = Mat::zeros(_src.rows, _src.cols, CV_8UC1);
+	float *src = (float*)_src.data;
+	uchar *dst = (uchar*)_dst.data;
+
+	for(int i = 0; i < (int)_src.total(); i++){
+		if(isnan(src[i]))
+			dst[i] = 255;
+	}
+}
+
 void
 frontstatsmat(vector<FrontStat> &v, Mat &dst)
 {
@@ -1253,10 +1273,21 @@ SAVENC(m15);
 SAVENC(m16);
 SAVENC(delta);
 SAVENC(omega);
-SAVENC(sstmag);
+if(DEBUG) savenc("oldsstmag.nc", sstmag);
 SAVENC(deltamag);
 SAVENC(deltarange);
 SAVENC(lam2);
+
+	logprintf("Laplacian of Gaussican...\n");
+	Mat logkern, mask;
+	logkernel(17, 2, logkern);
+	logkern *= -17;
+	nanmask(sstmag, mask);
+	sstmag.setTo(0, mask);
+	filter2D(sstmag, sstmag, -1, logkern);
+	sstmag.setTo(NAN, mask);
+	sstmag.setTo(0, sstmag < 0);
+SAVENC(sstmag);
 
 	logprintf("computing easyclouds...\n");
 	medianBlur(sst, medf, 5);

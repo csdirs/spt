@@ -123,3 +123,4 @@ void	gradientmag(const Mat &src, Mat &dst);
 void	localmax(const Mat &sstmag, Mat &high, Mat &low, int sigma);
 void	stdfilter(const Mat &src, Mat &dst, int ksize);
 void	rangefilter(const Mat &src, Mat &dst, int ksize);
+void	logkernel(int n, double sigma, Mat &dst);

@@ -178,3 +178,39 @@ rangefilter(const Mat &src, Mat &dst, int ksize)
 	dilate(src, max, elem);
 	dst = max - min;
 }
+
+// Compute Laplacian of Gaussian kernel.
+// See http://homepages.inf.ed.ac.uk/rbf/HIPR2/log.htm
+// This function is equivalent to fspecial('log', n, sigma) in MATLAB.
+//
+// n -- width/height of kernel
+// sigma -- standard deviation of the Gaussian
+// dst -- the kernel (output)
+//
+void
+logkernel(int n, double sigma, Mat &dst)
+{
+	dst.create(n, n, CV_64FC1);
+	int h = n/2;
+	double ss = sigma*sigma;
+	
+	for(int i = 0; i < n; i++){
+		double y = i - h;
+		for(int j = 0; j < n; j++){
+			double x = j - h;
+			dst.at<double>(i, j) = exp(-(x*x + y*y) / (2*ss));
+		}
+	}
+	double total = sum(dst)[0];
+	
+	for(int i = 0; i < n; i++){
+		double y = i - h;
+		for(int j = 0; j < n; j++){
+			double x = j - h;
+			dst.at<double>(i, j) *= x*x + y*y - 2*ss;
+		}
+	}
+
+	dst /= pow(ss, 2) * total;
+	dst -= mean(dst)[0];	// make sum of filter equal to 0
+}
