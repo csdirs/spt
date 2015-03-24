@@ -39,6 +39,7 @@ struct FrontStat {
 	int lsize, rsize;	// size of left and right sides
 	double lsst, rsst;	// average SST of left and right sides
 	double ldelta, rdelta;	// average delta of left and right sides
+	double lsstanom, rsstanom;	// average SST anomaly
 
 	bool ok;		// do we want this front?
 };
@@ -76,12 +77,14 @@ nanmask(const Mat &_src, Mat &_dst)
 void
 frontstatsmat(vector<FrontStat> &v, Mat &dst)
 {
-	dst.create(v.size(), 4, CV_32FC1);
+	dst.create(v.size(), 6, CV_32FC1);
 	for(int i = 0; i < (int)v.size(); i++){
 		dst.at<float>(i, 0) = v[i].lsst;
 		dst.at<float>(i, 1) = v[i].rsst;
 		dst.at<float>(i, 2) = v[i].ldelta;
 		dst.at<float>(i, 3) = v[i].rdelta;
+		dst.at<float>(i, 4) = v[i].lsstanom;
+		dst.at<float>(i, 5) = v[i].rsstanom;
 	}
 }
 
@@ -797,7 +800,7 @@ connectfronts(Mat &_fronts, const Mat &_dX, const Mat &_dY,
 	for(int iter = 0; iter < 5; iter++){
 		//Mat _valid = (_fronts != FRONT_INIT) & (_sstmag > 0.05)
 		//	& (_easyclouds == 0) & (lam2 < LAM2_THRESH);
-		Mat _valid = (_fronts != FRONT_INIT);
+		Mat _valid = (_fronts != FRONT_INIT) & (_easyclouds == 0);
 		CHECKMAT(_valid, CV_8UC1);
 		uchar *valid = (uchar*)_valid.data;
 		
@@ -878,18 +881,19 @@ dilatefronts(const Mat &fronts, const Mat &_sstmag, const Mat &_easyclouds, Mat 
 //
 static void
 findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag,
-	const Mat &_delta, int nclust, const Mat &_clust, const Mat &_acspo, double alpha,
-	Mat &_fronts, Mat &_adjclust)
+	const Mat &_sstanom, const Mat &_delta, int nclust, const Mat &_clust,
+	const Mat &_acspo, double alpha, Mat &_fronts, Mat &_adjclust)
 {
 	Mat _cclabels;
 	int *p, nfront, y, x, k, left, right, *cclabels;
-	double dy1, dx1, t;
+	double dy1, dx1;
 	uchar *adjclust;
 	
 	CHECKMAT(_sst, CV_32FC1);
 	CHECKMAT(_dy, CV_32FC1);
 	CHECKMAT(_dx, CV_32FC1);
 	CHECKMAT(_sstmag, CV_32FC1);
+	CHECKMAT(_sstanom, CV_32FC1);
 	CHECKMAT(_delta, CV_32FC1);
 	CHECKMAT(_clust, CV_32SC1);
 	CHECKMAT(_acspo, CV_8UC1);
@@ -898,6 +902,7 @@ findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag
 	float *dy = (float*)_dy.data;
 	float *dx = (float*)_dx.data;
 	float *sstmag = (float*)_sstmag.data;
+	float *sstanom = (float*)_sstanom.data;
 	float *delta = (float*)_delta.data;
 	int *clust = (int*)_clust.data;
 	uchar *acspo = (uchar*)_acspo.data;
@@ -945,18 +950,20 @@ findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag
 			
 			fronts[k] = FRONT_BIG;
 			if(0 <= left && left < (int)_fronts.total()
-			&& (clust[left] >= 0 || (acspo[left]&MaskLand) != 0)){
+			&& (clust[left] >= 0 || (acspo[left]&MaskLand) != 0) && !isnan(sstanom[left])){
 				fs.lsize++;
-				fs.lsst += sst[left];
-				fs.ldelta += delta[left];
+				//fs.lsst += sst[left];
+				//fs.ldelta += delta[left];
+				fs.lsstanom += sstanom[left];
 				fronts[left] = FRONT_LEFT;
 				(*(int*)leftcount.ptr(cclabels[k], clust[left], true))++;
 			}
 			if(0 <= right && right < (int)_fronts.total()
-			&& (clust[right] >= 0 || (acspo[right]&MaskLand) != 0)){
+			&& (clust[right] >= 0 || (acspo[right]&MaskLand) != 0) && !isnan(sstanom[right])){
 				fs.rsize++;
-				fs.rsst += sst[right];
-				fs.rdelta += delta[right];
+				//fs.rsst += sst[right];
+				//fs.rdelta += delta[right];
+				fs.rsstanom += sstanom[right];
 				fronts[right] = FRONT_RIGHT;
 				(*(int*)rightcount.ptr(cclabels[k], clust[right], true))++;
 			}
@@ -974,19 +981,22 @@ findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag
 	for(int i = 0; i < nfront; i++){
 		FrontStat &fs = fstats[i];
 		fs.sstmag /= fs.size;
-		fs.lsst /= fs.lsize;
-		fs.rsst /= fs.rsize;
-		fs.ldelta /= fs.lsize;
-		fs.rdelta /= fs.rsize;
+		//fs.lsst /= fs.lsize;
+		//fs.rsst /= fs.rsize;
+		//fs.ldelta /= fs.lsize;
+		//fs.rdelta /= fs.rsize;
+		fs.lsstanom /= fs.lsize;
+		fs.rsstanom /= fs.rsize;
 		
-		t = 0.7*fs.size;
-		fs.ok = fs.lsize > t && fs.rsize > t;
+		fs.ok = fs.lsstanom*fs.rsstanom < 0;
+		//double t = 0.7*fs.size;
+		//fs.ok = fs.lsize > t && fs.rsize > t;
 			//&& fs.sstmag > GRAD_THRESH;
 		
-		if(fs.lsst  <= fs.rsst)
-			fs.ok = fs.ok && fs.ldelta <= fs.rdelta;
-		else
-			fs.ok = fs.ok && fs.rdelta <= fs.ldelta;
+		//if(fs.lsst  <= fs.rsst)
+		//	fs.ok = fs.ok && fs.ldelta <= fs.rdelta;
+		//else
+		//	fs.ok = fs.ok && fs.rdelta <= fs.ldelta;
 		//fs.ok = fs.ok && fabs(fs.ldelta - fs.rdelta) < 0.1;
 		
 		if(!fs.ok)
@@ -1017,7 +1027,7 @@ findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag
 			fronts[k] = FRONT_OK;
 	}
 
-	if(false){
+	if(true){
 		Mat fstatsmat;
 		frontstatsmat(fstats, fstatsmat);
 		if(DEBUG) savenc("frontstats.nc", fstatsmat);
@@ -1263,20 +1273,8 @@ SAVENC(cmc);
 SAVENC(albedo);
 
 	logprintf("computing sstmag, etc....\n");
-	Mat delta = m15 - m16;
-	Mat omega = m14 - m15;
 	gradientmag(sst, sstmag, dX, dY);
-	gradientmag(delta, deltamag);
-	rangefilter(delta, deltarange, 7);
-	localmax(sstmag, lam2, lam1, 1);
-SAVENC(m15);
-SAVENC(m16);
-SAVENC(delta);
-SAVENC(omega);
 if(DEBUG) savenc("oldsstmag.nc", sstmag);
-SAVENC(deltamag);
-SAVENC(deltarange);
-SAVENC(lam2);
 
 	logprintf("Laplacian of Gaussican...\n");
 	Mat logkern, mask;
@@ -1288,6 +1286,19 @@ SAVENC(lam2);
 	sstmag.setTo(NAN, mask);
 	sstmag.setTo(0, sstmag < 0);
 SAVENC(sstmag);
+
+	Mat delta = m15 - m16;
+	Mat omega = m14 - m15;
+	gradientmag(delta, deltamag);
+	rangefilter(delta, deltarange, 7);
+	localmax(sstmag, lam2, lam1, 1);
+SAVENC(m15);
+SAVENC(m16);
+SAVENC(delta);
+SAVENC(omega);
+SAVENC(deltamag);
+SAVENC(deltarange);
+SAVENC(lam2);
 
 	logprintf("computing easyclouds...\n");
 	medianBlur(sst, medf, 5);
@@ -1303,10 +1314,15 @@ SAVENC(medf);
 SAVENC(stdf);
 SAVENC(easyclouds);
 	
+	Mat sstbil1;
+	bilateral(sst, easyclouds, sstbil1, SST_HIGH, 3, 21);
+	Mat sstanom1 = sst - sstbil1;
+SAVENC(sstbil1);
+	
 	logprintf("computing anomaly plus/minus...\n");
 	bilateral(sst, easyclouds, sstbil, SST_HIGH, 3, 200);
 	Mat sstanom = sst - sstbil;
-	plusminus(sstanom, sstpm);
+	plusminus(sstanom1, sstpm);
 SAVENC(sstbil);
 SAVENC(sstpm);
 
@@ -1353,7 +1369,7 @@ SAVENC(glabelsnn);
 	}
 	
 	logprintf("finding clusters adjacent to fronts...\n");
-	findadjacent(sst, dY, dX, sstmag, delta, nclust, glabelsnn, acspo, 5, fronts, adjclust);
+	findadjacent(sst, dY, dX, sstmag, sstanom1, delta, nclust, glabelsnn, acspo, 5, fronts, adjclust);
 SAVENC(fronts);
 
 	logprintf("creating spt mask...\n");
