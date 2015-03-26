@@ -65,7 +65,8 @@ gradientmag(const Mat &src, Mat &dst)
 	gradientmag(src, dst, dX, dY);
 }
 
-//  Find local maximum.
+// Find local maximum.
+// Prototype: matlab/localmax.m
 //
 // sstmag -- SST gradient magnitude
 // high, low -- (output)

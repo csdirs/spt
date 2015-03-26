@@ -902,7 +902,7 @@ findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag
 	float *dy = (float*)_dy.data;
 	float *dx = (float*)_dx.data;
 	float *sstmag = (float*)_sstmag.data;
-	float *sstanom = (float*)_sstanom.data;
+	//float *sstanom = (float*)_sstanom.data;
 	float *delta = (float*)_delta.data;
 	int *clust = (int*)_clust.data;
 	uchar *acspo = (uchar*)_acspo.data;
@@ -917,6 +917,7 @@ findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag
 		return;
 	CHECKMAT(_cclabels, CV_32SC1);
 	cclabels = (int*)_cclabels.data;
+	if(DEBUG) savenc("flabels.nc", _cclabels);
 	logprintf("findadjacent: initial number of fronts: %d\n", nfront);
 	
 	int countsize[] = {nfront, nclust};
@@ -950,20 +951,24 @@ findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag
 			
 			fronts[k] = FRONT_BIG;
 			if(0 <= left && left < (int)_fronts.total()
-			&& (clust[left] >= 0 || (acspo[left]&MaskLand) != 0) && !isnan(sstanom[left])){
+			&& (clust[left] >= 0 || (acspo[left]&MaskLand) != 0)
+			//&& !isnan(sstanom[left])
+			&& !isnan(sst[left]) && !isnan(delta[left])){
 				fs.lsize++;
-				//fs.lsst += sst[left];
-				//fs.ldelta += delta[left];
-				fs.lsstanom += sstanom[left];
+				fs.lsst += sst[left];
+				fs.ldelta += delta[left];
+				//fs.lsstanom += sstanom[left];
 				fronts[left] = FRONT_LEFT;
 				(*(int*)leftcount.ptr(cclabels[k], clust[left], true))++;
 			}
 			if(0 <= right && right < (int)_fronts.total()
-			&& (clust[right] >= 0 || (acspo[right]&MaskLand) != 0) && !isnan(sstanom[right])){
+			&& (clust[right] >= 0 || (acspo[right]&MaskLand) != 0)
+			//&& !isnan(sstanom[right])
+			&& !isnan(sst[right]) && !isnan(delta[right])){
 				fs.rsize++;
-				//fs.rsst += sst[right];
-				//fs.rdelta += delta[right];
-				fs.rsstanom += sstanom[right];
+				fs.rsst += sst[right];
+				fs.rdelta += delta[right];
+				//fs.rsstanom += sstanom[right];
 				fronts[right] = FRONT_RIGHT;
 				(*(int*)rightcount.ptr(cclabels[k], clust[right], true))++;
 			}
@@ -981,14 +986,15 @@ findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag
 	for(int i = 0; i < nfront; i++){
 		FrontStat &fs = fstats[i];
 		fs.sstmag /= fs.size;
-		//fs.lsst /= fs.lsize;
-		//fs.rsst /= fs.rsize;
-		//fs.ldelta /= fs.lsize;
-		//fs.rdelta /= fs.rsize;
-		fs.lsstanom /= fs.lsize;
-		fs.rsstanom /= fs.rsize;
+		fs.lsst /= fs.lsize;
+		fs.rsst /= fs.rsize;
+		fs.ldelta /= fs.lsize;
+		fs.rdelta /= fs.rsize;
+		//fs.lsstanom /= fs.lsize;
+		//fs.rsstanom /= fs.rsize;
 		
-		fs.ok = fs.lsstanom*fs.rsstanom < 0;
+		fs.ok = fabs((fs.ldelta-fs.rdelta) / (fs.lsst-fs.rsst)) < 0.1;
+		//fs.ok = fs.lsstanom*fs.rsstanom < 0;
 		//double t = 0.7*fs.size;
 		//fs.ok = fs.lsize > t && fs.rsize > t;
 			//&& fs.sstmag > GRAD_THRESH;
@@ -1270,6 +1276,8 @@ main(int argc, char **argv)
 SAVENC(acspo);
 SAVENC(sst);
 SAVENC(cmc);
+SAVENC(m14);
+SAVENC(m15);
 SAVENC(albedo);
 
 	logprintf("computing sstmag, etc....\n");
