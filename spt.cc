@@ -674,18 +674,18 @@ writespt(int ncid, const Mat &spt)
 // _glabels -- cluster labels before nearest neighbor lookup
 // _glabelsnn -- cluster labels after nearest neighbor lookup
 // _easyclouds -- easy clouds
-// _apm -- anomaly "plus minus" filter output
+// _anomzero -- zero crossings of anomaly
 // _fronts -- thermal fronts (output)
 //
 static void
 findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
-	const Mat &_deltamag, const Mat &easyclouds, const Mat &_apm, Mat &_fronts)
+	const Mat &_deltamag, const Mat &easyclouds, const Mat &_anomzero, Mat &_fronts)
 {
 	Mat _dilc, _dilq;
 	float *lam2, *sstmag, *stdf, *deltamag;
 	double m, llam, lmag, lstdf, ldel;
 	int i;
-	uchar *dilc, *apm;
+	uchar *dilc, *anomzero;
 	schar *fronts;
 	
 	CHECKMAT(_lam2, CV_32FC1);
@@ -693,7 +693,7 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 	CHECKMAT(_stdf, CV_32FC1);
 	CHECKMAT(_deltamag, CV_32FC1);
 	CHECKMAT(easyclouds, CV_8UC1);
-	CHECKMAT(_apm, CV_8UC1);
+	CHECKMAT(_anomzero, CV_8UC1);
 	_fronts.create(_sstmag.size(), CV_8SC1);
 	
 	lam2 = (float*)_lam2.data;
@@ -701,7 +701,7 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 	stdf = (float*)_stdf.data;
 	deltamag = (float*)_deltamag.data;
 	fronts = (schar*)_fronts.data;
-	apm = _apm.data;
+	anomzero = _anomzero.data;
 	
 	// dilate easyclouds
 	dilate(easyclouds, _dilc, getStructuringElement(MORPH_RECT, Size(7, 7)));
@@ -724,7 +724,7 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 			continue;
 
 		// detect front based on sstmag, deltamag, anomaly
-		if(apm[i] && sstmag[i] > 0.1 && sstmag[i]/deltamag[i] > 10){
+		if(anomzero[i] && sstmag[i] > 0.1 && sstmag[i]/deltamag[i] > 10){
 			fronts[i] = FRONT_INIT;
 			continue;
 		}
@@ -1051,10 +1051,10 @@ findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag
 			fronts[k] = FRONT_OK;
 	}
 
-	if(true){
+	if(DEBUG){
 		Mat fstatsmat;
 		frontstatsmat(fstats, fstatsmat);
-		if(DEBUG) savenc("frontstats.nc", fstatsmat);
+		savenc("frontstats.nc", fstatsmat);
 	}
 }
 
@@ -1205,14 +1205,14 @@ bilateral(const Mat &_src, const Mat &_easyclouds, Mat &_dst, double high, doubl
 	}
 }
 
-// Plus minus filter, which finds the edges between negative and positive
-// values of source image.
+// Find the zero crossings of an image (the edges between negative and positive
+// values of source image).
 // 
 // _src -- source image
 // _dst -- destination mask image (output)
 //
 static void
-plusminus(const Mat &_src, Mat &_dst)
+zerocrossing(const Mat &_src, Mat &_dst)
 {
 	Mat _tmp;
 	float *src, *tmp;
@@ -1242,7 +1242,6 @@ plusminus(const Mat &_src, Mat &_dst)
 			tmp[i] = 1;
 	}
 	boxFilter(_tmp, _tmp, -1, Size(wsize,wsize), Point(-1,-1), false);
-	if(DEBUG) savenc("apmsum.nc", _tmp);
 	
 	// create output mask based on box filter output
 	_dst = (-thresh <= _tmp) & (_tmp <= thresh);
@@ -1267,7 +1266,7 @@ main(int argc, char **argv)
 {
 	Mat dX, dY, sstmag, deltamag, deltarange, lam1, lam2,
 		medf, stdf, blurf,
-		sstbil, deltabil, sstpm,
+		sstbil, deltabil, anomzero,
 		glabels, glabelsnn, feat, BQ, DQ,
 		fronts, adjclust, spt, diff;
 	int ncid, n, nclust;
@@ -1337,12 +1336,12 @@ SAVENC(easyclouds);
 	Mat sstanom1 = sst - sstbil1;
 SAVENC(sstbil1);
 	
-	logprintf("computing anomaly plus/minus...\n");
+	logprintf("computing anomaly zero crossings...\n");
 	bilateral(sst, easyclouds, sstbil, SST_HIGH, 3, 200);
 	Mat sstanom = sst - sstbil;
-	plusminus(sstanom1, sstpm);
+	zerocrossing(sstanom1, anomzero);
 SAVENC(sstbil);
-SAVENC(sstpm);
+SAVENC(anomzero);
 
 	logprintf("quantizing variables...\n");
 	Var *qinput[] = {new SSTAnom(sstanom), new Delta(delta)};
@@ -1367,7 +1366,7 @@ SAVENC(glabels);
 SAVENC(glabelsnn);
 	
 	logprintf("finding thermal fronts...\n");
-	findfronts(lam2, sstmag, stdf, deltamag, easyclouds, sstpm, fronts);
+	findfronts(lam2, sstmag, stdf, deltamag, easyclouds, anomzero, fronts);
 	if(DEBUG) savenc("oldfronts.nc", fronts);
 	connectfronts(fronts, dX, dY, sstmag, easyclouds, lam2);
 	if(DEBUG) savenc("connfronts.nc", fronts);
