@@ -56,25 +56,6 @@ enum {
 };
 
 
-// Create a mask of where source image is NaN.
-//
-// _src -- source image
-// _dst -- NaN mask (output)
-//
-void
-nanmask(const Mat &_src, Mat &_dst)
-{
-	CHECKMAT(_src, CV_32FC1);
-	_dst = Mat::zeros(_src.rows, _src.cols, CV_8UC1);
-	float *src = (float*)_src.data;
-	uchar *dst = (uchar*)_dst.data;
-
-	for(int i = 0; i < (int)_src.total(); i++){
-		if(isnan(src[i]))
-			dst[i] = 255;
-	}
-}
-
 void
 frontstatsmat(vector<FrontStat> &v, Mat &dst)
 {
@@ -1286,7 +1267,7 @@ main(int argc, char **argv)
 {
 	Mat dX, dY, sstmag, deltamag, deltarange, lam1, lam2,
 		medf, stdf, blurf,
-		sstbil, deltabil, sstpm, deltapm,
+		sstbil, deltabil, sstpm,
 		glabels, glabelsnn, feat, BQ, DQ,
 		fronts, adjclust, spt, diff;
 	int ncid, n, nclust;
@@ -1319,16 +1300,9 @@ SAVENC(albedo);
 
 	logprintf("computing sstmag, etc....\n");
 	gradientmag(sst, sstmag, dX, dY);
-if(DEBUG) savenc("oldsstmag.nc", sstmag);
 
 	logprintf("Laplacian of Gaussican...\n");
-	Mat logkern, mask;
-	logkernel(17, 2, logkern);
-	logkern *= -17;
-	nanmask(sstmag, mask);
-	sstmag.setTo(0, mask);
-	filter2D(sstmag, sstmag, -1, logkern);
-	sstmag.setTo(NAN, mask);
+	nanlogfilter(sstmag, 17, 2, -17, sstmag);
 	sstmag.setTo(0, sstmag < 0);
 SAVENC(sstmag);
 
@@ -1370,20 +1344,6 @@ SAVENC(sstbil1);
 	plusminus(sstanom1, sstpm);
 SAVENC(sstbil);
 SAVENC(sstpm);
-
-	Mat sstpm2;
-	Mat sstanom2 = sst - cmc;
-	plusminus(sstanom2, sstpm2);
-SAVENC(sstpm2);
-
-//	bilateral(delta, easyclouds, deltabil, DELTA_HIGH, 0.1, 200);
-//	Mat deltaanom = delta - deltabil;
-//	plusminus(deltaanom, deltapm);
-//SAVENC(deltabil);
-//SAVENC(deltapm);
-
-//	easyclouds |= (sst-sstanom)-cmc < ANOMALY_THRESH;
-//if(DEBUG) savenc("easyclouds_new.nc", easyclouds);
 
 	logprintf("quantizing variables...\n");
 	Var *qinput[] = {new SSTAnom(sstanom), new Delta(delta)};

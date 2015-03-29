@@ -124,3 +124,4 @@ void	localmax(const Mat &sstmag, Mat &high, Mat &low, int sigma);
 void	stdfilter(const Mat &src, Mat &dst, int ksize);
 void	rangefilter(const Mat &src, Mat &dst, int ksize);
 void	logkernel(int n, double sigma, Mat &dst);
+void	nanlogfilter(const Mat &src, const int size, const int sigma, const int factor, Mat &dst);

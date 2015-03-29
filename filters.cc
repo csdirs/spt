@@ -215,3 +215,45 @@ logkernel(int n, double sigma, Mat &dst)
 	dst /= pow(ss, 2) * total;
 	dst -= mean(dst)[0];	// make sum of filter equal to 0
 }
+
+// Create a mask of where source image is NaN.
+//
+// _src -- source image
+// _dst -- NaN mask (output)
+//
+void
+nanmask(const Mat &_src, Mat &_dst)
+{
+	CHECKMAT(_src, CV_32FC1);
+	_dst = Mat::zeros(_src.rows, _src.cols, CV_8UC1);
+	float *src = (float*)_src.data;
+	uchar *dst = (uchar*)_dst.data;
+
+	for(int i = 0; i < (int)_src.total(); i++){
+		if(isnan(src[i]))
+			dst[i] = 255;
+	}
+}
+
+// Apply Laplacian of Gaussian (LoG) filter to an image containing NAN.
+//
+// src -- source image
+// size -- width/height of LoG kernel
+// sigma -- standard deviation of the Gaussian used in LoG kernel
+// factor -- kernel is multiplied by this number before application
+// dst -- destination image (output)
+//
+void
+nanlogfilter(const Mat &src, const int size, const int sigma, const int factor, Mat &dst)
+{
+	Mat kern, mask;
+	
+	logkernel(size, sigma, kern);
+	kern *= factor;
+	
+	src.copyTo(dst);
+	nanmask(dst, mask);
+	dst.setTo(0, mask);
+	filter2D(dst, dst, -1, kern);
+	dst.setTo(NAN, mask);
+}
