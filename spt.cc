@@ -1067,7 +1067,7 @@ findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag
 //	cloud/clear sky boundary. (output)
 //
 static void
-resample_acloud(const Resample *r, const Mat &_acspo, Mat &_acloud)
+resample_acloud(const Resample &r, const Mat &_acspo, Mat &_acloud)
 {
 	int i;
 	uchar *acspo;
@@ -1094,7 +1094,7 @@ resample_acloud(const Resample *r, const Mat &_acspo, Mat &_acloud)
 			break;
 		}
 	}
-	resample_float32(r, _acloud, _acloud, false);
+	resample_float32(&r, _acloud, _acloud, false);
 }
 
 // Create the SPT mask containing the cloud mask with new clear-sky restored
@@ -1108,7 +1108,7 @@ resample_acloud(const Resample *r, const Mat &_acspo, Mat &_acloud)
 // _spt -- spt mask sorted by latitude (output)
 //
 static void
-getspt(const Resample *r, const Mat &_acspo, const Mat &_clust,
+getspt(const Resample &r, const Mat &_acspo, const Mat &_clust,
 	const Mat &_adjclust, const Mat &_fronts, Mat &_spt)
 {
 	Mat _labels, stats, centoids, _acloud, _mask;
@@ -1272,7 +1272,7 @@ main(int argc, char **argv)
 		fronts, adjclust, spt, diff;
 	int ncid, n, nclust;
 	char *path;
-	Resample *r;
+	Resample r;
 
 	if(argc != 2)
 		eprintf("usage: %s granule\n", argv[0]);
@@ -1280,17 +1280,16 @@ main(int argc, char **argv)
 	logprintf("granule: %s\n", path);
 	
 	logprintf("reading and resampling...\n");
-	r = new Resample;
-	ncid = open_resampled(path, r, NC_WRITE);
-	Mat sst = readvar_resampled(ncid, r, "sst_regression");
-	Mat cmc = readvar_resampled(ncid, r, "sst_reynolds");
-	Mat lat = readvar_resampled(ncid, r, "latitude");
-	Mat lon = readvar_resampled(ncid, r, "longitude");
-	Mat acspo = readvar_resampled(ncid, r, "acspo_mask");
-	Mat m14 = readvar_resampled(ncid, r, "brightness_temp_chM14");
-	Mat m15 = readvar_resampled(ncid, r, "brightness_temp_chM15");
-	Mat m16 = readvar_resampled(ncid, r, "brightness_temp_chM16");
-	Mat albedo = readvar_resampled(ncid, r, "albedo_chM7");
+	ncid = open_resampled(path, &r, NC_WRITE);
+	Mat sst = readvar_resampled(ncid, &r, "sst_regression");
+	Mat cmc = readvar_resampled(ncid, &r, "sst_reynolds");
+	Mat lat = readvar_resampled(ncid, &r, "latitude");
+	Mat lon = readvar_resampled(ncid, &r, "longitude");
+	Mat acspo = readvar_resampled(ncid, &r, "acspo_mask");
+	Mat m14 = readvar_resampled(ncid, &r, "brightness_temp_chM14");
+	Mat m15 = readvar_resampled(ncid, &r, "brightness_temp_chM15");
+	Mat m16 = readvar_resampled(ncid, &r, "brightness_temp_chM16");
+	Mat albedo = readvar_resampled(ncid, &r, "albedo_chM7");
 SAVENC(acspo);
 SAVENC(sst);
 SAVENC(cmc);
@@ -1387,9 +1386,9 @@ SAVENC(fronts);
 SAVENC(spt);
 
 	logprintf("saving spt mask...\n");
-	Mat spt1 = resample_unsort(r->sind, spt);
+	Mat spt1 = resample_unsort(r.sind, spt);
 	writespt(ncid, spt1);
-	Mat acspo1 = resample_unsort(r->sind, acspo);
+	Mat acspo1 = resample_unsort(r.sind, acspo);
 	diffcloudmask(acspo1, spt1, diff);
 SAVENC(diff);
 
@@ -1403,7 +1402,6 @@ SAVENC(diff);
 	n = nc_close(ncid);
 	if(n != NC_NOERR)
 		ncfatal(n, "nc_close failed for %s", path);
-	delete r;
 	logprintf("done\n");
 	return 0;
 }
