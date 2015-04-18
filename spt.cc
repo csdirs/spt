@@ -41,6 +41,10 @@ struct FrontStat {
 	double ldelta, rdelta;	// average delta of left and right sides
 	double lsstanom, rsstanom;	// average SST anomaly
 	int lcloud, rcloud;	// number of ACSPO cloud pixels
+	
+	int ndiff;
+	double sstdiffmean;	// mean of SST difference between left and right sides
+	double sstdiffvar;	// variance of SST difference between left and right sides
 
 	bool ok;		// do we want this front?
 };
@@ -59,7 +63,7 @@ enum {
 void
 frontstatsmat(vector<FrontStat> &v, Mat &dst)
 {
-	dst.create(v.size(), 8, CV_32FC1);
+	dst.create(v.size(), 9, CV_32FC1);
 	for(int i = 0; i < (int)v.size(); i++){
 		dst.at<float>(i, 0) = v[i].lsst;
 		dst.at<float>(i, 1) = v[i].rsst;
@@ -69,6 +73,7 @@ frontstatsmat(vector<FrontStat> &v, Mat &dst)
 		dst.at<float>(i, 5) = v[i].rsstanom;
 		dst.at<float>(i, 6) = v[i].lcloud / (double)v[i].lsize;
 		dst.at<float>(i, 7) = v[i].rcloud / (double)v[i].rsize;
+		dst.at<float>(i, 8) = v[i].sstdiffvar;
 	}
 }
 
@@ -985,6 +990,16 @@ findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag
 				m15diff[k] = m15[left] - m15[right];
 				m16diff[k] = m16[left] - m16[right];
 				sstdiff[k] = sst[left] - sst[right];
+				
+				// Computer variance online.
+				// Donald E. Knuth (1998). The Art of Computer Programming, volume 2:
+				// Seminumerical Algorithms, 3rd edn., p. 232. Boston: Addison-Wesley.
+				// http://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Online_algorithm
+				double v = sst[right] - sst[left];
+				double q = v - fs.sstdiffmean;
+				fs.ndiff++;
+				fs.sstdiffmean += q/fs.ndiff;
+				fs.sstdiffvar += q * (v-fs.sstdiffmean);
 			}
 			k++;
 		}
@@ -1009,9 +1024,16 @@ findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag
 		fs.rdelta /= fs.rsize;
 		//fs.lsstanom /= fs.lsize;
 		//fs.rsstanom /= fs.rsize;
+		if(fs.ndiff < 2)
+			fs.sstdiffvar = 0;
+		else
+			fs.sstdiffvar /= fs.ndiff - 1;
 		
+		if(DEBUG && i==5){
+			logprintf("front %d, cloud %d/%d, side size %d/%d\n", i, fs.lcloud, fs.rcloud, fs.lsize, fs.rsize);
+		}
 		fs.ok = fabs((fs.ldelta-fs.rdelta) / (fs.lsst-fs.rsst)) < 0.1
-			&& (fs.lcloud < fs.lsize || fs.rcloud < fs.rsize);
+			&& (fs.lcloud < 0.9*fs.lsize || fs.rcloud < 0.9*fs.rsize);
 		//fs.ok = fs.lsstanom*fs.rsstanom < 0;
 		//double t = 0.7*fs.size;
 		//fs.ok = fs.lsize > t && fs.rsize > t;
@@ -1170,6 +1192,24 @@ getspt(const Resample &r, const Mat &_acspo, const Mat &_clust,
 	}
 }
 
+/*
+void
+prunerestored(Mat &spt, Mat &acspo, Mat &sst)
+{
+	Mat rest = ((spt&MaskCloud) == MaskCloudClear) & ((acspo & MaskCloud) != MaskCloudClear);
+	Mat dilrest;
+	dilate(rest, dilrest, getStructuringElement(MORPH_RECT, Size(21, 21)));
+	ncc = connectedComponentsWithStats(mask, _cclabels, stats, centoids, connectivity, CV_32S);
+	if(ncc <= 1)
+		return 0;
+	
+	for(int i = 0; i < (int)dilrest.total(); i++){
+		if(dilrest[i]
+	
+	
+}
+*/
+
 // Bilateral filter wrapper.
 static void
 bilateral(const Mat &_src, const Mat &_easyclouds, Mat &_dst, double high, double sigmacolor, double sigmaspace)
@@ -1298,6 +1338,7 @@ SAVENC(albedo);
 
 	logprintf("computing sstmag, etc....\n");
 	gradientmag(sst, sstmag, dX, dY);
+if(DEBUG) savenc("oldsstmag.nc", sstmag);
 
 	logprintf("Laplacian of Gaussican...\n");
 	nanlogfilter(sstmag, 17, 2, -17, sstmag);
