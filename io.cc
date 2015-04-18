@@ -27,7 +27,7 @@ fileprefix(const char *path)
 	return p;
 }
 
-void
+int
 readvar(int ncid, const char *name, Mat &img)
 {
 	int i, varid, n, ndims, dimids[MAXDIMS], ishape[MAXDIMS], cvt;
@@ -71,6 +71,7 @@ readvar(int ncid, const char *name, Mat &img)
 	n = nc_get_var(ncid, varid, img.data);
 	if(n != NC_NOERR)
 		ncfatal(n, "readvar: nc_get_var failed");
+	return varid;
 }
 
 void

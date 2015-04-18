@@ -104,7 +104,7 @@ void diffcloudmask(const Mat &_old, const Mat &_new, Mat &_rgb);
 
 // io.cc
 char	*fileprefix(const char *path);
-void	readvar(int ncid, const char *name, Mat&);
+int	readvar(int ncid, const char *name, Mat&);
 void ncfatal(int n, const char *fmt, ...);
 int open_resampled(const char *path, Resample *r, int omode);
 Mat	readvar_resampled(int ncid, Resample *r, const char *name);
