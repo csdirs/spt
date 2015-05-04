@@ -51,9 +51,9 @@ struct FrontStat {
 
 typedef struct Front Front;
 struct Front {
-	int	label;
 	vector<int>	ind;
 	vector<int>	leftind, rightind;
+	bool accept;
 };
 
 
@@ -863,23 +863,42 @@ dilatefronts(const Mat &fronts, const Mat &_sstmag, const Mat &_easyclouds, Mat 
 	connectedComponentsWithLimit((dst==1) & (_sstmag > 0.1) & (_easyclouds == 0), 8, 200, dst);
 }
 
+// Fill buffer buf with values in values at indices ind
+//
 void
-indexwhere(vector<int> &ind, float *buf, float *values)
+setvalues(vector<int> &ind, float *buf, float *values)
 {
 	for(int i = 0; i < (int)ind.size(); i++){
 		buf[i] = values[ind[i]];
 	}
 }
 
-// If correlation coefficent between m15 and delta at the front is negative, reject front.
+// Set the value at indices ind in buffer buf to value.
+///
+void
+setvalue(vector<int> &ind, char *buf, char value)
+{
+	for(int i = 0; i < (int)ind.size(); i++){
+		buf[ind[i]] = value;
+	}
+}
+
+// Accept/reject fronts based on front size and front statistics.
 //
-// _frontsimg -- fronts image with initial front (input & output)
+// _frontsimg -- fronts image with initial front
 // _m15 -- band 15 image
 // _delta -- band 15 minus band 16
+// _dy -- column-wise gradient
+// _dx -- row-wise gradient
+// _sstmag -- SST gradient magnitude
+// _clust -- clustering labels
+// _acspo -- ACSPO mask
+// _fronts -- fronts information (input & output)
 //
 static void
-checkfrontcorr(Mat &_frontsimg, const Mat &_m15, const Mat &_delta, const Mat &_dy, const Mat &_dx,
-	const Mat &_sstmag, const Mat &_clust, const Mat &_acspo, double alpha)
+verifyfronts(Mat &_frontsimg, const Mat &_m15, const Mat &_delta,
+	const Mat &_dy, const Mat &_dx, const Mat &_sstmag,
+	const Mat &_clust, const Mat &_acspo, vector<Front> &fronts)
 {
 	Mat _cclabels;
 
@@ -899,14 +918,14 @@ checkfrontcorr(Mat &_frontsimg, const Mat &_m15, const Mat &_delta, const Mat &_
 	CHECKMAT(_cclabels, CV_32SC1);
 	int *cclabels = (int*)_cclabels.data;
 	
-	vector<Front> fronts(nfront);
+	fronts.resize(nfront);
 	
+	// find front indices
 	for(int i = 0; i < (int)_frontsimg.total(); i++){
 		int lab = cclabels[i];
 		if(lab < 0){
 			continue;
 		}
-		fronts[lab].label = lab;
 		fronts[lab].ind.push_back(i);
 	}
 
@@ -918,15 +937,15 @@ checkfrontcorr(Mat &_frontsimg, const Mat &_m15, const Mat &_delta, const Mat &_
 	int *clust = (int*)_clust.data;
 	uchar *acspo = (uchar*)_acspo.data;
 
-	// find left and right sides of the fronts, and their statistics
+	// find indices of left and right sides of the fronts
 	int i = 0;
 	for(int y = 0; y < _frontsimg.rows; y++){
 		for(int x = 0; x < _frontsimg.cols; x++){
 			int lab = cclabels[i];
 			if(lab >= 0){
-				// normalize vector (dy, dx) and multiply it by alpha
-				int dy1 = round(alpha * dy[i]/sstmag[i]);
-				int dx1 = round(alpha * dx[i]/sstmag[i]);
+				// normalize vector (dy, dx) and multiply it by FRONT_SIDE_DIST
+				int dy1 = round(FRONT_SIDE_DIST * dy[i]/sstmag[i]);
+				int dx1 = round(FRONT_SIDE_DIST * dx[i]/sstmag[i]);
 				
 				// compute indices of left and right sides
 				int left = i + dx1*_frontsimg.cols - dy1;
@@ -947,8 +966,6 @@ checkfrontcorr(Mat &_frontsimg, const Mat &_m15, const Mat &_delta, const Mat &_
 		}
 	}
 	
-	char *frontsimg = (char*)_frontsimg.data;
-
 	Mat _frontm15 = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
 	Mat _frontdelta = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
 	Mat _leftdelta = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
@@ -958,35 +975,115 @@ checkfrontcorr(Mat &_frontsimg, const Mat &_m15, const Mat &_delta, const Mat &_
 	float *leftdelta = (float*)_leftdelta.data;
 	float *rightdelta = (float*)_rightdelta.data;
 	
+	// mark accepted fronts based on front statistics
 	for(int lab = 0; lab < nfront; lab++){
 		Front &f = fronts[lab];
-		indexwhere(f.ind, frontm15, m15);
-		indexwhere(f.ind, frontdelta, delta);
-		indexwhere(f.leftind, leftdelta, delta);
-		indexwhere(f.rightind, rightdelta, delta);
+		f.accept = false;
 		
-		for(int i = 0; i < (int)f.leftind.size(); i++){
-			frontsimg[f.leftind[i]] = FRONT_LEFT;
-		}
-		for(int i = 0; i < (int)f.rightind.size(); i++){
-			frontsimg[f.rightind[i]] = FRONT_RIGHT;
-		}
-		// Accept front only if
-		// 1) abs(delta1 + delta2 - 2*delta_f) < 0.04
-		//	where delta1 is at one side, delta2 at the other side, and delta_f is at the front
-		// 2) correlation coefficient of m15 and delta at the front is non-negative
+		// Reject front if
+		//	abs(delta1 + delta2 - 2*delta_f) >= 0.04
+		// where delta1 is average delta at one side, delta2 at the other side,
+		// and delta_f at the front.
+		setvalues(f.ind, frontdelta, delta);
+		setvalues(f.leftind, leftdelta, delta);
+		setvalues(f.rightind, rightdelta, delta);
 		double ddiff = fabs(meann(leftdelta, f.leftind.size())
 			+ meann(rightdelta, f.rightind.size())
 			-2*meann(frontdelta, f.ind.size()));
-		logprintf("size of left %d right %d front %d, ddiff %f\n",
-			f.leftind.size(), f.rightind.size(), f.ind.size(), ddiff);
-		if(ddiff < 0.04 && corrcoef(frontm15, frontdelta, f.ind.size()) >= 0){
-			for(int i = 0; i < (int)f.ind.size(); i++){
-				frontsimg[f.ind[i]] = FRONT_OK;
-			}
+		if(ddiff >= 0.04){
+			continue;
+		}
+
+		// Reject front if correlation coefficient of m15 and delta at the front is negative.
+		setvalues(f.ind, frontm15, m15);
+		if(corrcoef(frontm15, frontdelta, f.ind.size()) < 0){
+			continue;
+		}
+		
+		f.accept = true;
+	}
+}
+
+// Add left/right sides of fronts in fronts image, and mark accepted fronts.
+//
+// fronts -- front information
+// _frontsimg -- fronts image with initial front (input & ouptut)
+//
+void
+updatefrontsimg(vector<Front> &fronts, const Mat & _frontsimg)
+{
+	CHECKMAT(_frontsimg, CV_8SC1);
+	char *frontsimg = (char*)_frontsimg.data;
+	
+	for(int i = 0; i < (int)fronts.size(); i++){
+		Front &f = fronts[i];
+		
+		if(f.accept){
+			setvalue(f.ind, frontsimg, FRONT_OK);
+		}else{
+			setvalue(f.ind, frontsimg, FRONT_BIG);
+		}
+		setvalue(f.leftind, frontsimg, FRONT_LEFT);
+		setvalue(f.rightind, frontsimg, FRONT_RIGHT);
+	}
+}
+
+// Find adjacent clusters of fronts.
+//
+// fronts -- front information
+// nclust -- number of clusters
+// _clust -- clustering labels
+// _adjclust -- mask indicated if the a cluster is adjacent to a front (output)
+//
+void
+findadjacent2(vector<Front> &fronts, int nclust, const Mat &_clust, Mat &_adjclust)
+{
+	CHECKMAT(_clust, CV_32SC1);
+	int *clust = (int*)_clust.data;
+
+	int countsize[] = {(int)fronts.size(), nclust};
+	SparseMat leftcount(nelem(countsize), countsize, CV_32SC1);
+	SparseMat rightcount(nelem(countsize), countsize, CV_32SC1);
+	
+	for(int i = 0; i < (int)fronts.size(); i++){
+		Front &f = fronts[i];
+		
+		for(int j = 0; j < (int)f.leftind.size(); j++){
+			(*(int*)leftcount.ptr(i, clust[f.leftind[j]], true))++;
+		}
+		for(int j = 0; j < (int)f.rightind.size(); j++){
+			(*(int*)rightcount.ptr(i, clust[f.rightind[j]], true))++;
+		}
+	}
+	
+	_adjclust = Mat::zeros(nclust, 1, CV_8UC1);
+	uchar *adjclust = _adjclust.data;
+
+	for(int i = 0; i < (int)fronts.size(); i++){
+		Front &f = fronts[i];
+		if(!f.accept){
+			continue;
+		}
+		
+		for(int j = 0; j < nclust; j++){
+			bool inleft = false;
+			bool inright = false;
+			int *p;
+
+			p = (int*)leftcount.ptr(i, j, false);
+			if(p && *p/(double)f.leftind.size() > 0.3)
+				inleft = true;
+
+			p = (int*)rightcount.ptr(i, j, false);
+			if(p && *p/(double)f.rightind.size() > 0.3)
+				inright = true;
+			
+			if((inleft && !inright) || (!inleft && inright))
+				adjclust[j] = 255;
 		}
 	}
 }
+
 
 // Narrow down the number of thermal fronts and find clusters that are
 // adjacent to those fronts.
@@ -997,14 +1094,13 @@ checkfrontcorr(Mat &_frontsimg, const Mat &_m15, const Mat &_delta, const Mat &_
 // nclust -- number of clusters
 // _clust -- clustering labels
 // _acspo -- ACSPO mask
-// alpha -- factor multiplied to gradient for obtaining the left/right sides of fronts
 // _fronts -- fronts image (input & output)
 // _adjclust -- mask indicated if the a cluster is adjacent to a front (output)
 //
 static void
 findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag,
 	const Mat &_sstanom, const Mat &_delta, const Mat &_m15, const Mat &_m16,
-	int nclust, const Mat &_clust, const Mat &_acspo, double alpha,
+	int nclust, const Mat &_clust, const Mat &_acspo,
 	Mat &_fronts, Mat &_adjclust)
 {
 	Mat _cclabels;
@@ -1073,9 +1169,9 @@ findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag
 				continue;
 			}
 			
-			// normalize vector (dy, dx) and multiply it by alpha
-			dy1 = round(alpha * dy[k]/sstmag[k]);
-			dx1 = round(alpha * dx[k]/sstmag[k]);
+			// normalize vector (dy, dx) and multiply it by FRONT_SIDE_DIST
+			dy1 = round(FRONT_SIDE_DIST * dy[k]/sstmag[k]);
+			dx1 = round(FRONT_SIDE_DIST * dx[k]/sstmag[k]);
 			
 			// compute indices of left and right sides
 			left = k + dx1*_fronts.cols - dy1;
@@ -1185,7 +1281,6 @@ findadjacent(const Mat &_sst, const Mat &_dy, const Mat &_dx, const Mat &_sstmag
 			bool inleft = false;
 			bool inright = false;
 
-			
 			p = (int*)leftcount.ptr(i, j, false);
 			if(p && *p/(double)fs.lsize > 0.3)
 				inleft = true;
@@ -1441,7 +1536,7 @@ main(int argc, char **argv)
 		medf, stdf, blurf,
 		sstbil, deltabil, anomzero,
 		glabels, glabelsnn, feat, BQ, DQ,
-		fronts, adjclust, spt, diff;
+		frontsimg, adjclust, spt, diff;
 	int ncid, n, nclust;
 	char *path;
 	Resample r;
@@ -1540,26 +1635,30 @@ SAVENC(glabels);
 SAVENC(glabelsnn);
 	
 	logprintf("finding thermal fronts...\n");
-	findfronts(lam2, sstmag, stdf, deltamag, easyclouds, anomzero, fronts);
-	if(DEBUG) savenc("oldfronts.nc", fronts);
-	connectfronts(fronts, dX, dY, sstmag, easyclouds, lam2);
-	if(DEBUG) savenc("connfronts.nc", fronts);
+	findfronts(lam2, sstmag, stdf, deltamag, easyclouds, anomzero, frontsimg);
+	if(DEBUG) savenc("oldfronts.nc", frontsimg);
+	connectfronts(frontsimg, dX, dY, sstmag, easyclouds, lam2);
+	if(DEBUG) savenc("connfronts.nc", frontsimg);
 	if(false){	
 		Mat dilfronts;
-		dilatefronts(fronts, sstmag, easyclouds, dilfronts);
+		dilatefronts(frontsimg, sstmag, easyclouds, dilfronts);
 		SAVENC(dilfronts);
 	}
 	
-	Mat fronts2 = fronts.clone();
-	checkfrontcorr(fronts2, m15, delta, dY, dX, sstmag, glabelsnn, acspo, 5);
-	SAVENC(fronts2);
-	
 	logprintf("finding clusters adjacent to fronts...\n");
-	findadjacent(sst, dY, dX, sstmag, sstanom1, delta, m15, m16, nclust, glabelsnn, acspo, 5, fronts, adjclust);
-SAVENC(fronts);
+	if(true){
+		vector<Front> fronts;
+		verifyfronts(frontsimg, m15, delta, dY, dX, sstmag, glabelsnn, acspo, fronts);
+		updatefrontsimg(fronts, frontsimg);
+		findadjacent2(fronts, nclust, glabelsnn, adjclust);
+	}else{
+		findadjacent(sst, dY, dX, sstmag, sstanom1, delta, m15, m16, nclust, glabelsnn, acspo, frontsimg, adjclust);
+	}
+SAVENC(frontsimg);
+SAVENC(adjclust);
 
 	logprintf("creating spt mask...\n");
-	getspt(r, acspo, glabelsnn, adjclust, fronts, spt);
+	getspt(r, acspo, glabelsnn, adjclust, frontsimg, spt);
 SAVENC(spt);
 
 	logprintf("saving spt mask...\n");

@@ -60,6 +60,8 @@ enum {
 	
 	COMP_INVALID = -1,	// invalid component
 	COMP_SPECKLE = -2,	// component that is too small
+	
+	FRONT_SIDE_DIST = 5,	// multiplied to gradient dx/dy to obtain front sides
 };
 
 enum {
