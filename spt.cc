@@ -53,7 +53,7 @@ typedef struct Front Front;
 struct Front {
 	int	label;
 	vector<int>	ind;
-	//vector<int>	leftind, rightind;
+	vector<int>	leftind, rightind;
 };
 
 
@@ -863,6 +863,14 @@ dilatefronts(const Mat &fronts, const Mat &_sstmag, const Mat &_easyclouds, Mat 
 	connectedComponentsWithLimit((dst==1) & (_sstmag > 0.1) & (_easyclouds == 0), 8, 200, dst);
 }
 
+void
+indexwhere(vector<int> &ind, float *buf, float *values)
+{
+	for(int i = 0; i < (int)ind.size(); i++){
+		buf[i] = values[ind[i]];
+	}
+}
+
 // If correlation coefficent between m15 and delta at the front is negative, reject front.
 //
 // _frontsimg -- fronts image with initial front (input & output)
@@ -870,22 +878,27 @@ dilatefronts(const Mat &fronts, const Mat &_sstmag, const Mat &_easyclouds, Mat 
 // _delta -- band 15 minus band 16
 //
 static void
-checkfrontcorr(Mat &_frontsimg, Mat &_m15, Mat &_delta)
+checkfrontcorr(Mat &_frontsimg, const Mat &_m15, const Mat &_delta, const Mat &_dy, const Mat &_dx,
+	const Mat &_sstmag, const Mat &_clust, const Mat &_acspo, double alpha)
 {
 	Mat _cclabels;
 
 	CHECKMAT(_frontsimg, CV_8SC1);
 	CHECKMAT(_m15, CV_32FC1);
 	CHECKMAT(_delta, CV_32FC1);
+	CHECKMAT(_dy, CV_32FC1);
+	CHECKMAT(_dx, CV_32FC1);
+	CHECKMAT(_sstmag, CV_32FC1);
+	CHECKMAT(_clust, CV_32SC1);
+	CHECKMAT(_acspo, CV_8UC1);
 	
 	// run connected components on fronts, eliminating small fronts
-	int nfront = connectedComponentsWithLimit(_frontsimg==FRONT_INIT, 8, 200, _cclabels);
+	int nfront = connectedComponentsWithLimit(_frontsimg==FRONT_INIT, 8, 50, _cclabels);
 	if(nfront <= 0)
 		return;
 	CHECKMAT(_cclabels, CV_32SC1);
 	int *cclabels = (int*)_cclabels.data;
 	
-	logprintf("nfront = %d\n", nfront);
 	vector<Front> fronts(nfront);
 	
 	for(int i = 0; i < (int)_frontsimg.total(); i++){
@@ -896,38 +909,83 @@ checkfrontcorr(Mat &_frontsimg, Mat &_m15, Mat &_delta)
 		fronts[lab].label = lab;
 		fronts[lab].ind.push_back(i);
 	}
-	
-	logprintf("front indices done\n");
-	
-	char *frontsimg = (char*)_frontsimg.data;
+
 	float *m15 = (float*)_m15.data;
 	float *delta = (float*)_delta.data;
+	float *dy = (float*)_dy.data;
+	float *dx = (float*)_dx.data;
+	float *sstmag = (float*)_sstmag.data;
+	int *clust = (int*)_clust.data;
+	uchar *acspo = (uchar*)_acspo.data;
+
+	// find left and right sides of the fronts, and their statistics
+	int i = 0;
+	for(int y = 0; y < _frontsimg.rows; y++){
+		for(int x = 0; x < _frontsimg.cols; x++){
+			int lab = cclabels[i];
+			if(lab >= 0){
+				// normalize vector (dy, dx) and multiply it by alpha
+				int dy1 = round(alpha * dy[i]/sstmag[i]);
+				int dx1 = round(alpha * dx[i]/sstmag[i]);
+				
+				// compute indices of left and right sides
+				int left = i + dx1*_frontsimg.cols - dy1;
+				int right = i - dx1*_frontsimg.cols + dy1;
+
+				if(0 <= left && left < (int)_frontsimg.total()
+				&& (clust[left] >= 0 || (acspo[left]&MaskLand) != 0)
+				&& !isnan(m15[left]) && !isnan(delta[left])){
+					fronts[lab].leftind.push_back(left);
+				}
+				if(0 <= right && right < (int)_frontsimg.total()
+				&& (clust[right] >= 0 || (acspo[right]&MaskLand) != 0)
+				&& !isnan(m15[right]) && !isnan(delta[right])){
+					fronts[lab].rightind.push_back(right);
+				}
+			}
+			i++;
+		}
+	}
+	
+	char *frontsimg = (char*)_frontsimg.data;
 
 	Mat _frontm15 = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
 	Mat _frontdelta = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
+	Mat _leftdelta = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
+	Mat _rightdelta = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
 	float *frontm15 = (float*)_frontm15.data;
 	float *frontdelta = (float*)_frontdelta.data;
+	float *leftdelta = (float*)_leftdelta.data;
+	float *rightdelta = (float*)_rightdelta.data;
 	
 	for(int lab = 0; lab < nfront; lab++){
-		logprintf("corrcoef Front %d\n", lab);
 		Front &f = fronts[lab];
-		for(int i = 0; i < (int)f.ind.size(); i++){
-			frontm15[i] = m15[f.ind[i]];
-			frontdelta[i] = delta[f.ind[i]];
+		indexwhere(f.ind, frontm15, m15);
+		indexwhere(f.ind, frontdelta, delta);
+		indexwhere(f.leftind, leftdelta, delta);
+		indexwhere(f.rightind, rightdelta, delta);
+		
+		for(int i = 0; i < (int)f.leftind.size(); i++){
+			frontsimg[f.leftind[i]] = FRONT_LEFT;
 		}
-		
-		double cc = corrcoef(frontm15, frontdelta, f.ind.size());
-		logprintf("label %d corrcoef %f\n", lab, cc);
-		
-		if(corrcoef(frontm15, frontdelta, f.ind.size()) >= 0){
+		for(int i = 0; i < (int)f.rightind.size(); i++){
+			frontsimg[f.rightind[i]] = FRONT_RIGHT;
+		}
+		// Accept front only if
+		// 1) abs(delta1 + delta2 - 2*delta_f) < 0.04
+		//	where delta1 is at one side, delta2 at the other side, and delta_f is at the front
+		// 2) correlation coefficient of m15 and delta at the front is non-negative
+		double ddiff = fabs(meann(leftdelta, f.leftind.size())
+			+ meann(rightdelta, f.rightind.size())
+			-2*meann(frontdelta, f.ind.size()));
+		logprintf("size of left %d right %d front %d, ddiff %f\n",
+			f.leftind.size(), f.rightind.size(), f.ind.size(), ddiff);
+		if(ddiff < 0.04 && corrcoef(frontm15, frontdelta, f.ind.size()) >= 0){
 			for(int i = 0; i < (int)f.ind.size(); i++){
 				frontsimg[f.ind[i]] = FRONT_OK;
 			}
 		}
 	}
-	// TODO: accept front only if
-	// sqrt((delta1 - delta2)**2 + (delta1 + delta2 - 2*delta_f)**2) < 0.04
-	// where delta1 is at one side, delta2 at the other side, and delta_f is at the front
 }
 
 // Narrow down the number of thermal fronts and find clusters that are
@@ -1493,7 +1551,7 @@ SAVENC(glabelsnn);
 	}
 	
 	Mat fronts2 = fronts.clone();
-	checkfrontcorr(fronts2, m15, delta);
+	checkfrontcorr(fronts2, m15, delta, dY, dX, sstmag, glabelsnn, acspo, 5);
 	SAVENC(fronts2);
 	
 	logprintf("finding clusters adjacent to fronts...\n");
