@@ -49,6 +49,14 @@ struct FrontStat {
 	bool ok;		// do we want this front?
 };
 
+typedef struct Front Front;
+struct Front {
+	int	label;
+	vector<int>	ind;
+	//vector<int>	leftind, rightind;
+};
+
+
 // thernal fronts and their sides
 enum {
 	FRONT_INVALID = -1,
@@ -855,6 +863,73 @@ dilatefronts(const Mat &fronts, const Mat &_sstmag, const Mat &_easyclouds, Mat 
 	connectedComponentsWithLimit((dst==1) & (_sstmag > 0.1) & (_easyclouds == 0), 8, 200, dst);
 }
 
+// If correlation coefficent between m15 and delta at the front is negative, reject front.
+//
+// _frontsimg -- fronts image with initial front (input & output)
+// _m15 -- band 15 image
+// _delta -- band 15 minus band 16
+//
+static void
+checkfrontcorr(Mat &_frontsimg, Mat &_m15, Mat &_delta)
+{
+	Mat _cclabels;
+
+	CHECKMAT(_frontsimg, CV_8SC1);
+	CHECKMAT(_m15, CV_32FC1);
+	CHECKMAT(_delta, CV_32FC1);
+	
+	// run connected components on fronts, eliminating small fronts
+	int nfront = connectedComponentsWithLimit(_frontsimg==FRONT_INIT, 8, 200, _cclabels);
+	if(nfront <= 0)
+		return;
+	CHECKMAT(_cclabels, CV_32SC1);
+	int *cclabels = (int*)_cclabels.data;
+	
+	logprintf("nfront = %d\n", nfront);
+	vector<Front> fronts(nfront);
+	
+	for(int i = 0; i < (int)_frontsimg.total(); i++){
+		int lab = cclabels[i];
+		if(lab < 0){
+			continue;
+		}
+		fronts[lab].label = lab;
+		fronts[lab].ind.push_back(i);
+	}
+	
+	logprintf("front indices done\n");
+	
+	char *frontsimg = (char*)_frontsimg.data;
+	float *m15 = (float*)_m15.data;
+	float *delta = (float*)_delta.data;
+
+	Mat _frontm15 = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
+	Mat _frontdelta = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
+	float *frontm15 = (float*)_frontm15.data;
+	float *frontdelta = (float*)_frontdelta.data;
+	
+	for(int lab = 0; lab < nfront; lab++){
+		logprintf("corrcoef Front %d\n", lab);
+		Front &f = fronts[lab];
+		for(int i = 0; i < (int)f.ind.size(); i++){
+			frontm15[i] = m15[f.ind[i]];
+			frontdelta[i] = delta[f.ind[i]];
+		}
+		
+		double cc = corrcoef(frontm15, frontdelta, f.ind.size());
+		logprintf("label %d corrcoef %f\n", lab, cc);
+		
+		if(corrcoef(frontm15, frontdelta, f.ind.size()) >= 0){
+			for(int i = 0; i < (int)f.ind.size(); i++){
+				frontsimg[f.ind[i]] = FRONT_OK;
+			}
+		}
+	}
+	// TODO: accept front only if
+	// sqrt((delta1 - delta2)**2 + (delta1 + delta2 - 2*delta_f)**2) < 0.04
+	// where delta1 is at one side, delta2 at the other side, and delta_f is at the front
+}
+
 // Narrow down the number of thermal fronts and find clusters that are
 // adjacent to those fronts.
 //
@@ -1416,6 +1491,10 @@ SAVENC(glabelsnn);
 		dilatefronts(fronts, sstmag, easyclouds, dilfronts);
 		SAVENC(dilfronts);
 	}
+	
+	Mat fronts2 = fronts.clone();
+	checkfrontcorr(fronts2, m15, delta);
+	SAVENC(fronts2);
 	
 	logprintf("finding clusters adjacent to fronts...\n");
 	findadjacent(sst, dY, dX, sstmag, sstanom1, delta, m15, m16, nclust, glabelsnn, acspo, 5, fronts, adjclust);

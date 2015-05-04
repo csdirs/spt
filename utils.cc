@@ -183,3 +183,61 @@ savefilename(char *path, const char *suf)
 	strcpy(p, suf);
 	return estrdup(buf);
 }
+
+// Return mean of first n elements of x.
+//
+double
+meann(const float *x, int n)
+{
+	if(n <= 0){
+		return 0;
+	}
+	
+	double sum = 0;
+	for(int i = 0; i < n; i++){
+		sum += x[i];
+	}
+	return sum/n;
+}
+
+// Return sample correlation coefficient of first n elements of x and y.
+// Computed as:
+// sum((x - mean(x)) * (y - mean(y))) / (sqrt(sum((x - sx)**2)) * sqrt(sum((y - sy)**2)))
+//
+// See http://en.wikipedia.org/wiki/Pearson_product-moment_correlation_coefficient#For_a_sample
+//
+double
+corrcoef(const float *x, const float *y, int n)
+{
+	if(n <= 0){
+		return 0;
+	}
+
+	double mx = meann(x, n);
+	double my = meann(y, n);
+	
+	// top = sum((x-mean(x)) * (y-mean(y)))
+	double top = 0;
+	for(int i = 0; i < n; i++){
+		top += (x[i]-mx) * (y[i]-my);
+	}
+	
+	// sx = sum((x-mean(x))**2)
+	double sx = 0;
+	for(int i = 0; i < n; i++){
+		sx += SQ(x[i] - mx);
+	}
+	
+	// sy = sum((y-mean(y))**2)
+	double sy = 0;
+	for(int i = 0; i < n; i++){
+		sy += SQ(y[i] - my);
+	}
+	
+	// return top / (sqrt(sx) * sqrt(sy))
+	double bot = sqrt(sx) * sqrt(sy);
+	if(bot == 0){
+		return 0;
+	}
+	return top/bot;
+}

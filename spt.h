@@ -101,6 +101,7 @@ char* estrdup(const char *s);
 void *emalloc(size_t n);
 const char *type2str(int type);
 void diffcloudmask(const Mat &_old, const Mat &_new, Mat &_rgb);
+double corrcoef(const float *x, const float *y, int n);
 
 // io.cc
 char	*fileprefix(const char *path);
