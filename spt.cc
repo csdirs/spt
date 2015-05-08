@@ -1410,14 +1410,49 @@ getspt(const Resample &r, const Mat &_acspo, const Mat &_clust,
 	CHECKMAT(_labels, CV_32SC1);
 	labels = (int*)_labels.data;
 	
+	// count number of pixels in ok fronts & all fronts for each component
+	Mat _okfronts = Mat::zeros(nlab, 1, CV_32SC1);
+	Mat _totfronts = Mat::zeros(nlab, 1, CV_32SC1);
+	int *okfronts = (int*)_okfronts.data;
+	int *totfronts = (int*)_totfronts.data;
+	for(i = 0; i < (int)_acspo.total(); i++){
+		n = labels[i];
+		if(n <= 0){
+			continue;
+		}
+		if(fronts[i] == FRONT_OK){
+			okfronts[n]++;
+		}
+		if(fronts[i] == FRONT_INIT || fronts[i] == FRONT_BIG || fronts[i] == FRONT_OK){
+			totfronts[n]++;
+		}
+	}
+	
+	if(false){
+		Mat _frontrat = Mat::zeros(_acspo.size(), CV_32FC1);
+		float *frontrat = (float*)_frontrat.data;
+		for(i = 0; i < (int)_acspo.total(); i++){
+			frontrat[i] = NAN;
+			n = labels[i];
+			if(n > 0 && stats.at<int>(n, CC_STAT_AREA) >= 100){
+				frontrat[i] = okfronts[n]/(double)totfronts[n];
+			}
+		}
+		if(DEBUG) savenc("frontrat.nc", _frontrat);
+	}
+	
 	// Restored some clear-sky in spt mask.
 	// We disable small components from being restored.
+	// Also check ratio of accepted fronts over all fronts is large.
 	for(i = 0; i < (int)_acspo.total(); i++){
 		n = labels[i];
 		if(n > 0 && stats.at<int>(n, CC_STAT_AREA) >= 100
-		&& (acspo[i]&MaskCloud) == MaskCloudSure)
+		&& (acspo[i]&MaskCloud) == MaskCloudSure
+		&& totfronts[n] != 0 && okfronts[n]/(double)totfronts[n] > 0.25)
 			spt[i] = MaskCloudClear >> MaskCloudOffset;
 	}
+	
+	// TODO: check correlation coeficent of m15 & delta of restored cluster is positive
 }
 
 /*
