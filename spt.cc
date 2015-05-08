@@ -1347,6 +1347,49 @@ resample_acloud(const Resample &r, const Mat &_acspo, Mat &_acloud)
 	resample_float32(&r, _acloud, _acloud, false);
 }
 
+typedef struct Cluster Cluster;
+struct Cluster {
+	vector<int> ind;
+	bool accept;
+};
+
+static void
+verifyclusters(const Mat &_labels, int start, int nlabels,
+	const Mat &_m15, const Mat &_delta, vector<Cluster> &clusters)
+{
+	CHECKMAT(_labels, CV_32SC1);
+	CHECKMAT(_m15, CV_32FC1);
+	CHECKMAT(_delta, CV_32FC1);
+	int *labels = (int*)_labels.data;
+	float *m15 = (float*)_m15.data;
+	float *delta = (float*)_delta.data;
+	
+	for(int i = 0; i < (int)_labels.total(); i++){
+		int lab = labels[i];
+		if(lab >= start){
+			clusters[lab].ind.push_back(i);
+		}
+	}
+	
+	Mat _m15buf = Mat::zeros(_labels.total(), 1, CV_32FC1);
+	Mat _deltabuf = Mat::zeros(_labels.total(), 1, CV_32FC1);
+	float *m15buf = (float*)_m15buf.data;
+	float *deltabuf = (float*)_deltabuf.data;
+
+	for(int lab = start; lab < nlabels; lab++){
+		Cluster &c = clusters[lab];
+		setvalues(c.ind, m15buf, m15);
+		setvalues(c.ind, deltabuf, delta);
+		
+		c.accept = false;
+		logprintf("cluster %d corr %f\n", lab, corrcoef(m15buf, deltabuf, c.ind.size()));
+		if(corrcoef(m15buf, deltabuf, c.ind.size()) >= 0){
+			c.accept = true;
+		}
+	}
+}
+
+
 // Create the SPT mask containing the cloud mask with new clear-sky restored
 // and the fronts.
 //
@@ -1359,7 +1402,7 @@ resample_acloud(const Resample &r, const Mat &_acspo, Mat &_acloud)
 //
 static void
 getspt(const Resample &r, const Mat &_acspo, const Mat &_clust,
-	const Mat &_adjclust, const Mat &_fronts, Mat &_spt)
+	const Mat &_adjclust, const Mat &_fronts, const Mat &m15, const Mat &delta, Mat &_spt)
 {
 	Mat _labels, stats, centoids, _acloud, _mask;
 	float *acloud;
@@ -1441,6 +1484,9 @@ getspt(const Resample &r, const Mat &_acspo, const Mat &_clust,
 		if(DEBUG) savenc("frontrat.nc", _frontrat);
 	}
 	
+	vector<Cluster> clusters(nlab);
+	verifyclusters(_labels, 1, nlab, m15, delta, clusters);
+	
 	// Restored some clear-sky in spt mask.
 	// We disable small components from being restored.
 	// Also check ratio of accepted fronts over all fronts is large.
@@ -1448,7 +1494,8 @@ getspt(const Resample &r, const Mat &_acspo, const Mat &_clust,
 		n = labels[i];
 		if(n > 0 && stats.at<int>(n, CC_STAT_AREA) >= 100
 		&& (acspo[i]&MaskCloud) == MaskCloudSure
-		&& totfronts[n] != 0 && okfronts[n]/(double)totfronts[n] > 0.25)
+		//&& totfronts[n] != 0 && okfronts[n]/(double)totfronts[n] > 0.25
+		&& clusters[n].accept)
 			spt[i] = MaskCloudClear >> MaskCloudOffset;
 	}
 	
@@ -1693,7 +1740,7 @@ SAVENC(frontsimg);
 SAVENC(adjclust);
 
 	logprintf("creating spt mask...\n");
-	getspt(r, acspo, glabelsnn, adjclust, frontsimg, spt);
+	getspt(r, acspo, glabelsnn, adjclust, frontsimg, m15, delta, spt);
 SAVENC(spt);
 
 	logprintf("saving spt mask...\n");
