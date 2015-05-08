@@ -1353,16 +1353,60 @@ struct Cluster {
 	bool accept;
 };
 
+// Verify clusters are acceptable.
+//
+// _labels -- clustering labels
+// start -- ignore labels less than start
+// nlabels -- the labels in _labels are in the range [0, nlabels)
+// stats -- connected component stats for the clusters
+// _fronts -- fronts image
+// m15, delta -- m15 and delta images
+// clusters -- clustering info that's caller allocated (output)
+//
 static void
-verifyclusters(const Mat &_labels, int start, int nlabels,
-	const Mat &_m15, const Mat &_delta, vector<Cluster> &clusters)
+verifyclusters(const Mat &_labels, int start, int nlabels, const Mat &stats,
+	const Mat &_fronts, const Mat &_m15, const Mat &_delta, vector<Cluster> &clusters)
 {
 	CHECKMAT(_labels, CV_32SC1);
+	CHECKMAT(stats, CV_32SC1);
+	CHECKMAT(_fronts, CV_8SC1);
 	CHECKMAT(_m15, CV_32FC1);
 	CHECKMAT(_delta, CV_32FC1);
 	int *labels = (int*)_labels.data;
+	char *fronts = (char*)_fronts.data;
 	float *m15 = (float*)_m15.data;
 	float *delta = (float*)_delta.data;
+	
+	// count number of pixels in ok fronts & all fronts for each component
+	Mat _okfronts = Mat::zeros(nlabels, 1, CV_32SC1);
+	Mat _totfronts = Mat::zeros(nlabels, 1, CV_32SC1);
+	int *okfronts = (int*)_okfronts.data;
+	int *totfronts = (int*)_totfronts.data;
+	for(int i = 0; i < (int)_fronts.total(); i++){
+		int lab = labels[i];
+		if(lab < start){
+			continue;
+		}
+		if(fronts[i] == FRONT_OK){
+			okfronts[lab]++;
+		}
+		if(fronts[i] == FRONT_INIT || fronts[i] == FRONT_BIG || fronts[i] == FRONT_OK){
+			totfronts[lab]++;
+		}
+	}
+	
+	if(false){
+		Mat _frontrat = Mat::zeros(_fronts.size(), CV_32FC1);
+		float *frontrat = (float*)_frontrat.data;
+		for(int i = 0; i < (int)_fronts.total(); i++){
+			frontrat[i] = NAN;
+			int lab = labels[i];
+			if(lab >= start && stats.at<int>(lab, CC_STAT_AREA) >= 100){
+				frontrat[i] = okfronts[lab]/(double)totfronts[lab];
+			}
+		}
+		if(DEBUG) savenc("frontrat.nc", _frontrat);
+	}
 	
 	for(int i = 0; i < (int)_labels.total(); i++){
 		int lab = labels[i];
@@ -1378,10 +1422,16 @@ verifyclusters(const Mat &_labels, int start, int nlabels,
 
 	for(int lab = start; lab < nlabels; lab++){
 		Cluster &c = clusters[lab];
+		c.accept = false;
+		if(stats.at<int>(lab, CC_STAT_AREA) < 100){
+			continue;
+		}
+		//if(totfronts[lab] == 0 || okfronts[lab]/(double)totfronts[lab] <= 0.25){
+		//	continue;
+		//}
+		
 		setvalues(c.ind, m15buf, m15);
 		setvalues(c.ind, deltabuf, delta);
-		
-		c.accept = false;
 		logprintf("cluster %d corr %f\n", lab, corrcoef(m15buf, deltabuf, c.ind.size()));
 		if(corrcoef(m15buf, deltabuf, c.ind.size()) >= 0){
 			c.accept = true;
@@ -1453,72 +1503,21 @@ getspt(const Resample &r, const Mat &_acspo, const Mat &_clust,
 	CHECKMAT(_labels, CV_32SC1);
 	labels = (int*)_labels.data;
 	
-	// count number of pixels in ok fronts & all fronts for each component
-	Mat _okfronts = Mat::zeros(nlab, 1, CV_32SC1);
-	Mat _totfronts = Mat::zeros(nlab, 1, CV_32SC1);
-	int *okfronts = (int*)_okfronts.data;
-	int *totfronts = (int*)_totfronts.data;
-	for(i = 0; i < (int)_acspo.total(); i++){
-		n = labels[i];
-		if(n <= 0){
-			continue;
-		}
-		if(fronts[i] == FRONT_OK){
-			okfronts[n]++;
-		}
-		if(fronts[i] == FRONT_INIT || fronts[i] == FRONT_BIG || fronts[i] == FRONT_OK){
-			totfronts[n]++;
-		}
-	}
-	
-	if(false){
-		Mat _frontrat = Mat::zeros(_acspo.size(), CV_32FC1);
-		float *frontrat = (float*)_frontrat.data;
-		for(i = 0; i < (int)_acspo.total(); i++){
-			frontrat[i] = NAN;
-			n = labels[i];
-			if(n > 0 && stats.at<int>(n, CC_STAT_AREA) >= 100){
-				frontrat[i] = okfronts[n]/(double)totfronts[n];
-			}
-		}
-		if(DEBUG) savenc("frontrat.nc", _frontrat);
-	}
-	
 	vector<Cluster> clusters(nlab);
-	verifyclusters(_labels, 1, nlab, m15, delta, clusters);
+	verifyclusters(_labels, 1, nlab, stats, _fronts, m15, delta, clusters);
 	
 	// Restored some clear-sky in spt mask.
 	// We disable small components from being restored.
 	// Also check ratio of accepted fronts over all fronts is large.
 	for(i = 0; i < (int)_acspo.total(); i++){
 		n = labels[i];
-		if(n > 0 && stats.at<int>(n, CC_STAT_AREA) >= 100
-		&& (acspo[i]&MaskCloud) == MaskCloudSure
-		//&& totfronts[n] != 0 && okfronts[n]/(double)totfronts[n] > 0.25
+		if(n > 0 && (acspo[i]&MaskCloud) == MaskCloudSure
 		&& clusters[n].accept)
 			spt[i] = MaskCloudClear >> MaskCloudOffset;
 	}
 	
 	// TODO: check correlation coeficent of m15 & delta of restored cluster is positive
 }
-
-/*
-void
-prunerestored(Mat &spt, Mat &acspo, Mat &sst)
-{
-	Mat rest = ((spt&MaskCloud) == MaskCloudClear) & ((acspo & MaskCloud) != MaskCloudClear);
-	Mat dilrest;
-	dilate(rest, dilrest, getStructuringElement(MORPH_RECT, Size(21, 21)));
-	ncc = connectedComponentsWithStats(mask, _cclabels, stats, centoids, connectivity, CV_32S);
-	if(ncc <= 1)
-		return 0;
-	
-	for(int i = 0; i < (int)dilrest.total(); i++){
-		if(dilrest[i]
-	
-	
-}
-*/
 
 // Bilateral filter wrapper.
 static void
