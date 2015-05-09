@@ -1515,8 +1515,6 @@ getspt(const Resample &r, const Mat &_acspo, const Mat &_clust,
 		&& clusters[n].accept)
 			spt[i] = MaskCloudClear >> MaskCloudOffset;
 	}
-	
-	// TODO: check correlation coeficent of m15 & delta of restored cluster is positive
 }
 
 // Bilateral filter wrapper.
