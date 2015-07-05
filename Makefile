@@ -65,4 +65,5 @@ $(RESAM): $(OFILES_RESAM)
 	$(CXX) -c $(CXXFLAGS) $<
 
 clean:
-	rm -f $(TARG) $(OFILES_SPT) $(OFILES_CMDIFF)
+	rm -f $(SPT) $(CMDIFF) $(RESAM) \
+		$(OFILES_SPT) $(OFILES_CMDIFF) $(OFILES_RESAM)

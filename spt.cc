@@ -27,6 +27,7 @@ enum {
 	FEAT_LON,
 	FEAT_SST,
 	FEAT_DELTA,
+	FEAT_OMEGA,
 	NFEAT,
 };
 
@@ -121,10 +122,25 @@ public:
 		min = DELTA_LOW;
 		max = DELTA_HIGH;
 		avgfeat = true;
-		scalefeat = 5.0;
+		scalefeat = 1.0;
 	};
 	int quantize(float val) {
 		return cvRound((val - DELTA_LOW) * (1.0/DQ_STEP));
+	};
+};
+
+class Omega : public Var
+{
+public:
+	Omega(Mat &m) {
+		mat = m;
+		min = OMEGA_LOW;
+		max = OMEGA_HIGH;
+		avgfeat = true;
+		scalefeat = 1.0;
+	};
+	int quantize(float val) {
+		return cvRound((val - OMEGA_LOW) * (1.0/OQ_STEP));
 	};
 };
 
@@ -246,7 +262,7 @@ quantize(int n, Var **src, const Mat &_easyclouds, const Mat &_deltarange,
 	for(i = 0; i < (int)size.area(); i++){
 		if(easyclouds[i]
 		|| deltarange[i] > DELTARANGE_THRESH
-		|| sstmag[i] > 0.5		// || delta[i] < -0.5
+		|| sstmag[i] > GRAD_LOW		// || delta[i] < -0.5
 		|| deltamag[i] > DELTAMAG_LOW
 		|| (omega[i] < OMEGA_LOW || omega[i] > OMEGA_HIGH))
 			continue;
@@ -569,7 +585,7 @@ labelnbrs(Mat &_feat, Var **_vars, const Mat &_easyclouds,
 	logprintf("labelnbrs: searching nearest neighbor indices...\n");
 	
 	// dilate all the clusters
-	dilate(_glabels >= 0, _labdil, getStructuringElement(MORPH_RECT, Size(21, 21)));
+	dilate(_glabels >= 0, _labdil, getStructuringElement(MORPH_RECT, Size(101, 101)));
 	CHECKMAT(_labdil, CV_8UC1);
 	
 	glabels = (int*)_glabels.data;
@@ -584,7 +600,7 @@ labelnbrs(Mat &_feat, Var **_vars, const Mat &_easyclouds,
 	for(i = 0; i < (int)size.area(); i++){
 		if(!labdil[i] || glabels[i] >= 0	// not regions added by dilation
 		|| easyclouds[i]
-		|| (sstmag[i] < GRAD_LOW && glabels[i] != COMP_SPECKLE))
+		)//|| (sstmag[i] < GRAD_LOW && glabels[i] != COMP_SPECKLE))
 			continue;
 		
 		bool ok = true;
@@ -691,7 +707,7 @@ writespt(int ncid, const Mat &spt)
 // _fronts -- thermal fronts (output)
 //
 static void
-findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
+findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_sstanom, const Mat &_stdf,
 	const Mat &_deltamag, const Mat &easyclouds, const Mat &_anomzero, Mat &_fronts)
 {
 	Mat _dilc, _dilq;
@@ -703,6 +719,7 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 	
 	CHECKMAT(_lam2, CV_32FC1);
 	CHECKMAT(_sstmag, CV_32FC1);
+	CHECKMAT(_sstanom, CV_32FC1);
 	CHECKMAT(_stdf, CV_32FC1);
 	CHECKMAT(_deltamag, CV_32FC1);
 	CHECKMAT(easyclouds, CV_8UC1);
@@ -711,6 +728,7 @@ findfronts(const Mat &_lam2, const Mat &_sstmag, const Mat &_stdf,
 	
 	lam2 = (float*)_lam2.data;
 	sstmag = (float*)_sstmag.data;
+	float *sstanom = (float*)_sstanom.data;
 	stdf = (float*)_stdf.data;
 	deltamag = (float*)_deltamag.data;
 	fronts = (schar*)_fronts.data;
@@ -896,7 +914,7 @@ setvalue(vector<int> &ind, char *buf, char value)
 // _fronts -- fronts information (input & output)
 //
 static void
-verifyfronts(Mat &_frontsimg, const Mat &_m15, const Mat &_delta,
+verifyfronts(Mat &_frontsimg, const Mat &_m15, const Mat &_delta, const Mat &_omega,
 	const Mat &_dy, const Mat &_dx, const Mat &_sstmag,
 	const Mat &_clust, const Mat &_acspo, vector<Front> &fronts)
 {
@@ -905,6 +923,7 @@ verifyfronts(Mat &_frontsimg, const Mat &_m15, const Mat &_delta,
 	CHECKMAT(_frontsimg, CV_8SC1);
 	CHECKMAT(_m15, CV_32FC1);
 	CHECKMAT(_delta, CV_32FC1);
+	CHECKMAT(_omega, CV_32FC1);
 	CHECKMAT(_dy, CV_32FC1);
 	CHECKMAT(_dx, CV_32FC1);
 	CHECKMAT(_sstmag, CV_32FC1);
@@ -931,6 +950,7 @@ verifyfronts(Mat &_frontsimg, const Mat &_m15, const Mat &_delta,
 
 	float *m15 = (float*)_m15.data;
 	float *delta = (float*)_delta.data;
+	float *omega = (float*)_omega.data;
 	float *dy = (float*)_dy.data;
 	float *dx = (float*)_dx.data;
 	float *sstmag = (float*)_sstmag.data;
@@ -968,10 +988,12 @@ verifyfronts(Mat &_frontsimg, const Mat &_m15, const Mat &_delta,
 	
 	Mat _frontm15 = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
 	Mat _frontdelta = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
+	Mat _frontomega = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
 	Mat _leftdelta = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
 	Mat _rightdelta = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
 	float *frontm15 = (float*)_frontm15.data;
 	float *frontdelta = (float*)_frontdelta.data;
+	float *frontomega = (float*)_frontomega.data;
 	float *leftdelta = (float*)_leftdelta.data;
 	float *rightdelta = (float*)_rightdelta.data;
 	
@@ -994,9 +1016,11 @@ verifyfronts(Mat &_frontsimg, const Mat &_m15, const Mat &_delta,
 			continue;
 		}
 
-		// Reject front if correlation coefficient of m15 and delta at the front is negative.
+		// Reject front based on correlation coefficient at the front.
 		setvalues(f.ind, frontm15, m15);
-		if(corrcoef(frontm15, frontdelta, f.ind.size()) < 0){
+		setvalues(f.ind, frontomega, omega);
+		if(corrcoef(frontm15, frontdelta, f.ind.size()) <= 0
+		|| corrcoef(frontomega, frontdelta, f.ind.size()) >= 0){
 			continue;
 		}
 		
@@ -1654,7 +1678,7 @@ SAVENC(sstmag);
 
 	Mat delta = m15 - m16;
 	Mat omega = m14 - m15;
-	gradientmag(delta, deltamag);
+	gradientmag(omega, deltamag);
 	rangefilter(delta, deltarange, 7);
 	localmax(sstmag, lam2, lam1, 1);
 SAVENC(m15);
@@ -1704,6 +1728,7 @@ SAVENC(anomzero);
 		new Lon(lon),
 		new SST(sst),
 		new Delta(delta),
+		new Omega(omega),
 	};
 	nclust = cluster(qoutput[0], qoutput[1], vars, glabels, feat);
 SAVENC(glabels);
@@ -1714,7 +1739,7 @@ SAVENC(glabels);
 SAVENC(glabelsnn);
 	
 	logprintf("finding thermal fronts...\n");
-	findfronts(lam2, sstmag, stdf, deltamag, easyclouds, anomzero, frontsimg);
+	findfronts(lam2, sstmag, sstanom, stdf, deltamag, easyclouds, anomzero, frontsimg);
 	if(DEBUG) savenc("oldfronts.nc", frontsimg);
 	connectfronts(frontsimg, dX, dY, sstmag, easyclouds, lam2);
 	if(DEBUG) savenc("connfronts.nc", frontsimg);
@@ -1727,12 +1752,15 @@ SAVENC(glabelsnn);
 	logprintf("finding clusters adjacent to fronts...\n");
 	if(true){
 		vector<Front> fronts;
-		verifyfronts(frontsimg, m15, delta, dY, dX, sstmag, glabelsnn, acspo, fronts);
+		verifyfronts(frontsimg, m15, delta, omega, dY, dX, sstmag, glabelsnn, acspo, fronts);
+		
 		updatefrontsimg(fronts, frontsimg);
+		// TODO: remove front pixels where sstanom < -0.1
 		findadjacent2(fronts, nclust, glabelsnn, adjclust);
 	}else{
 		findadjacent(sst, dY, dX, sstmag, sstanom1, delta, m15, m16, nclust, glabelsnn, acspo, frontsimg, adjclust);
 	}
+	// TODO: thinning (see matlab code in email)
 SAVENC(frontsimg);
 SAVENC(adjclust);
 
