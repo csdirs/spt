@@ -64,6 +64,7 @@ enum {
 	FRONT_INIT = 0,	// initial fronts (stage 1)
 	FRONT_BIG,	// big enough fronts (stage 2)
 	FRONT_OK,	// final fronts (stage 3)
+	FRONT_THIN,	// thinned fronts (stage 4)
 	FRONT_LEFT,	// left side
 	FRONT_RIGHT,	// right side
 };
@@ -1006,6 +1007,7 @@ verifyfronts(Mat &_frontsimg, const Mat &_m15, const Mat &_delta, const Mat &_om
 		Front &f = fronts[lab];
 		f.accept = false;
 		
+		// TODO: uncomment?
 		//setvalues(f.ind, frontsstanom, sstanom);
 		//if(maxn(frontsstanom, f.ind.size()) < -0.3){
 		//	continue;
@@ -1058,6 +1060,65 @@ updatefrontsimg(vector<Front> &fronts, const Mat & _frontsimg)
 		}
 		setvalue(f.leftind, frontsimg, FRONT_LEFT);
 		setvalue(f.rightind, frontsimg, FRONT_RIGHT);
+	}
+}
+
+// Thin fronts based on SST gradient.
+// Prototype: matlab/front_thinning.m
+//
+// frontsimg -- front labels
+// dY -- gradient in Y direction
+// dX -- gradient in X direction
+// sstmag -- gradient magnitude
+// thinnedf -- front labels containing thinned fronts (output)
+//
+void
+thinfronts(const Mat &_frontsimg, const Mat &_dY, const Mat &_dX, const Mat &_sstmag, Mat &thinnedf)
+{
+	CHECKMAT(_frontsimg, CV_8SC1);
+	CHECKMAT(_dX, CV_32FC1);
+	CHECKMAT(_dY, CV_32FC1);
+	CHECKMAT(_sstmag, CV_32FC1);
+	
+	char *frontsimg = (char*)_frontsimg.data;
+	float *dX = (float*)_dX.data;
+	float *dY = (float*)_dY.data;
+	float *sstmag = (float*)_sstmag.data;
+	
+	thinnedf = _frontsimg.clone();
+	
+	int i = 0;
+	for(int y = 0; y < _frontsimg.rows; y++){
+		for(int x = 0; x < _frontsimg.cols; x++){
+			if(frontsimg[i] == FRONT_OK){
+				double dy = dY[i] / sstmag[i];
+				double dx = dX[i] / sstmag[i];
+
+				int maxy = y;
+				int maxx = x;
+				float maxg = _sstmag.at<float>(maxy, maxx);
+				for(int alpha = -5; alpha <= 5; alpha++){
+					int yy = round(y + alpha*dx);
+					int xx = round(x - alpha*dy);
+					
+					if(0 <= yy && yy < _frontsimg.rows
+					&& 0 <= xx && xx < _frontsimg.cols
+					&& _sstmag.at<float>(yy,xx) > maxg){
+						maxg = _sstmag.at<float>(yy,xx);
+						maxx = xx;
+						maxy = yy;
+					}
+					//if(0 <= yy && yy < _frontsimg.rows
+					//&& 0 <= xx && x < _frontsimg.cols){
+					//	thinnedf.at<char>(yy, xx) = FRONT_THIN;
+					//}
+				}
+				if(_frontsimg.at<char>(maxy, maxx) == FRONT_OK){
+					thinnedf.at<char>(maxy, maxx) = FRONT_THIN;
+				}
+			}
+			i++;
+		}
 	}
 }
 
@@ -1761,15 +1822,16 @@ SAVENC(glabelsnn);
 	logprintf("finding clusters adjacent to fronts...\n");
 	if(true){
 		vector<Front> fronts;
-		verifyfronts(frontsimg, m15, delta, omega, dY, dX, sstmag, sstanom, glabelsnn, acspo, fronts);
+		Mat thinnedf;
 		
+		verifyfronts(frontsimg, m15, delta, omega, dY, dX, sstmag, sstanom, glabelsnn, acspo, fronts);
 		updatefrontsimg(fronts, frontsimg);
-		// TODO: remove front pixels where sstanom < -0.1
+		thinfronts(frontsimg, dY, dX, sstmag, thinnedf);
 		findadjacent2(fronts, nclust, glabelsnn, adjclust);
+SAVENC(thinnedf);
 	}else{
 		findadjacent(sst, dY, dX, sstmag, sstanom1, delta, m15, m16, nclust, glabelsnn, acspo, frontsimg, adjclust);
 	}
-	// TODO: thinning (see matlab code in email)
 SAVENC(frontsimg);
 SAVENC(adjclust);
 
