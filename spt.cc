@@ -915,7 +915,7 @@ setvalue(vector<int> &ind, char *buf, char value)
 //
 static void
 verifyfronts(Mat &_frontsimg, const Mat &_m15, const Mat &_delta, const Mat &_omega,
-	const Mat &_dy, const Mat &_dx, const Mat &_sstmag,
+	const Mat &_dy, const Mat &_dx, const Mat &_sstmag, const Mat &_sstanom,
 	const Mat &_clust, const Mat &_acspo, vector<Front> &fronts)
 {
 	Mat _cclabels;
@@ -927,6 +927,7 @@ verifyfronts(Mat &_frontsimg, const Mat &_m15, const Mat &_delta, const Mat &_om
 	CHECKMAT(_dy, CV_32FC1);
 	CHECKMAT(_dx, CV_32FC1);
 	CHECKMAT(_sstmag, CV_32FC1);
+	CHECKMAT(_sstanom, CV_32FC1);
 	CHECKMAT(_clust, CV_32SC1);
 	CHECKMAT(_acspo, CV_8UC1);
 	
@@ -954,6 +955,7 @@ verifyfronts(Mat &_frontsimg, const Mat &_m15, const Mat &_delta, const Mat &_om
 	float *dy = (float*)_dy.data;
 	float *dx = (float*)_dx.data;
 	float *sstmag = (float*)_sstmag.data;
+	float *sstanom = (float*)_sstanom.data;
 	int *clust = (int*)_clust.data;
 	uchar *acspo = (uchar*)_acspo.data;
 
@@ -989,11 +991,13 @@ verifyfronts(Mat &_frontsimg, const Mat &_m15, const Mat &_delta, const Mat &_om
 	Mat _frontm15 = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
 	Mat _frontdelta = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
 	Mat _frontomega = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
+	Mat _frontsstanom = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
 	Mat _leftdelta = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
 	Mat _rightdelta = Mat::zeros(_frontsimg.total(), 1, CV_32FC1);
 	float *frontm15 = (float*)_frontm15.data;
 	float *frontdelta = (float*)_frontdelta.data;
 	float *frontomega = (float*)_frontomega.data;
+	float *frontsstanom = (float*)_frontsstanom.data;
 	float *leftdelta = (float*)_leftdelta.data;
 	float *rightdelta = (float*)_rightdelta.data;
 	
@@ -1001,6 +1005,11 @@ verifyfronts(Mat &_frontsimg, const Mat &_m15, const Mat &_delta, const Mat &_om
 	for(int lab = 0; lab < nfront; lab++){
 		Front &f = fronts[lab];
 		f.accept = false;
+		
+		//setvalues(f.ind, frontsstanom, sstanom);
+		//if(maxn(frontsstanom, f.ind.size()) < -0.3){
+		//	continue;
+		//}
 		
 		// Reject front if
 		//	abs(delta1 + delta2 - 2*delta_f) >= 0.04
@@ -1752,7 +1761,7 @@ SAVENC(glabelsnn);
 	logprintf("finding clusters adjacent to fronts...\n");
 	if(true){
 		vector<Front> fronts;
-		verifyfronts(frontsimg, m15, delta, omega, dY, dX, sstmag, glabelsnn, acspo, fronts);
+		verifyfronts(frontsimg, m15, delta, omega, dY, dX, sstmag, sstanom, glabelsnn, acspo, fronts);
 		
 		updatefrontsimg(fronts, frontsimg);
 		// TODO: remove front pixels where sstanom < -0.1

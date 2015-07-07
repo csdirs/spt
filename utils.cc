@@ -200,6 +200,25 @@ meann(const float *x, int n)
 	return sum/n;
 }
 
+// Return maximum of first n elements of x.
+//
+double
+maxn(const float *x, int n)
+{
+	if(n <= 0){
+		return -999;
+	}
+	
+	double max = x[0];
+	for(int i = 1; i < n; i++){
+		if(x[i] > max){
+			max = x[i];
+		}
+	}
+	return max;
+	
+}
+
 // Return sample correlation coefficient of first n elements of x and y.
 // Computed as:
 // sum((x - mean(x)) * (y - mean(y))) / (sqrt(sum((x - sx)**2)) * sqrt(sum((y - sy)**2)))
