@@ -1444,6 +1444,7 @@ resample_acloud(const Resample &r, const Mat &_acspo, Mat &_acloud)
 typedef struct Cluster Cluster;
 struct Cluster {
 	vector<int> ind;
+	int nborderocean;
 	bool accept;
 };
 
@@ -1459,17 +1460,22 @@ struct Cluster {
 //
 static void
 verifyclusters(const Mat &_labels, int start, int nlabels, const Mat &stats,
-	const Mat &_fronts, const Mat &_m15, const Mat &_delta, vector<Cluster> &clusters)
+	const Mat &_fronts, const Mat &_m15, const Mat &_delta,
+	const Mat &_acspo, const Mat &_border, vector<Cluster> &clusters)
 {
 	CHECKMAT(_labels, CV_32SC1);
 	CHECKMAT(stats, CV_32SC1);
 	CHECKMAT(_fronts, CV_8SC1);
 	CHECKMAT(_m15, CV_32FC1);
 	CHECKMAT(_delta, CV_32FC1);
+	CHECKMAT(_acspo, CV_8UC1);
+	CHECKMAT(_border, CV_8UC1);
 	int *labels = (int*)_labels.data;
 	char *fronts = (char*)_fronts.data;
 	float *m15 = (float*)_m15.data;
 	float *delta = (float*)_delta.data;
+	uchar *acspo = _acspo.data;
+	uchar *border = _border.data;
 	
 	// count number of pixels in ok fronts & all fronts for each component
 	Mat _okfronts = Mat::zeros(nlabels, 1, CV_32SC1);
@@ -1502,10 +1508,15 @@ verifyclusters(const Mat &_labels, int start, int nlabels, const Mat &stats,
 		if(DEBUG) savenc("frontrat.nc", _frontrat);
 	}
 	
+	for(int lab = start; lab < nlabels; lab++){
+		clusters[lab].nborderocean = 0;
+	}
 	for(int i = 0; i < (int)_labels.total(); i++){
 		int lab = labels[i];
 		if(lab >= start){
 			clusters[lab].ind.push_back(i);
+			if(border[i] && (acspo[i]&MaskCloud) == MaskCloudClear)
+				clusters[lab].nborderocean++;
 		}
 	}
 	
@@ -1526,7 +1537,7 @@ verifyclusters(const Mat &_labels, int start, int nlabels, const Mat &stats,
 		
 		setvalues(c.ind, m15buf, m15);
 		setvalues(c.ind, deltabuf, delta);
-		logprintf("cluster %d corr %f\n", lab, corrcoef(m15buf, deltabuf, c.ind.size()));
+		// TODO: accept only if c.nborderocean > 0
 		if(corrcoef(m15buf, deltabuf, c.ind.size()) >= 0){
 			c.accept = true;
 		}
@@ -1597,8 +1608,13 @@ getspt(const Resample &r, const Mat &_acspo, const Mat &_clust,
 	CHECKMAT(_labels, CV_32SC1);
 	labels = (int*)_labels.data;
 	
+	// TODO: need to use dilation instead of erosion to find borders?
+	Mat maskero;
+	erode(_mask, maskero, getStructuringElement(MORPH_RECT, Size(3, 3)));
+	Mat border = _mask & ~maskero;
+	
 	vector<Cluster> clusters(nlab);
-	verifyclusters(_labels, 1, nlab, stats, _fronts, m15, delta, clusters);
+	verifyclusters(_labels, 1, nlab, stats, _fronts, m15, delta, _acspo, border, clusters);
 	
 	// Restored some clear-sky in spt mask.
 	// We disable small components from being restored.
