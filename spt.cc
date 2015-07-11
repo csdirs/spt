@@ -695,6 +695,49 @@ writespt(int ncid, const Mat &spt)
 		ncfatal(n, "nc_putvar_uchar failed");
 }
 
+static void
+writevar(int ncid, const char *varname, const Mat &data)
+{
+	int n, varid, ndims, dimids[2];
+	nc_type xtype;
+	size_t len;
+	
+	n = nc_inq_varid(ncid, varname, &varid);
+	if(n != NC_NOERR)
+		ncfatal(n, "nc_inq_varid failed");
+
+	// Varify that the netcdf variable has correct type and dimensions.
+	n = nc_inq_var(ncid, varid, NULL, &xtype, &ndims, dimids, NULL);
+	if(n != NC_NOERR)
+		ncfatal(n, "nc_inq_var failed");
+	switch(xtype){
+	default:
+		eprintf("invalid variable type %d\n", xtype);
+	case NC_UBYTE:
+		if(data.type() != CV_8UC1)
+			eprintf("invalid Mat type %s", type2str(data.type()));
+		break;
+	case NC_FLOAT:
+		if(data.type() != CV_32FC1)
+			eprintf("invalid Mat type %s", type2str(data.type()));
+		break;
+	}
+	if(ndims != 2)
+		eprintf("variable dims is %d, want 2\n", ndims);
+	for(int i = 0; i < 2; i++){
+		n = nc_inq_dimlen(ncid, dimids[i], &len);
+		if(n != NC_NOERR)
+			ncfatal(n, "nc_inq_dimlen failed");
+		if(len != (size_t)data.size[i])
+			eprintf("dimension %d is %d, want %d\n", i, len, data.size[i]);
+	}
+
+	// Write data into netcdf variable.
+	n = nc_put_var(ncid, varid, data.data);
+	if(n != NC_NOERR)
+		ncfatal(n, "nc_putvar_uchar failed");
+}
+
 // Find thermal fronts.
 //
 // _lam2 -- local max
@@ -1073,24 +1116,27 @@ updatefrontsimg(vector<Front> &fronts, const Mat & _frontsimg)
 // thinnedf -- front labels containing thinned fronts (output)
 //
 void
-thinfronts(const Mat &_frontsimg, const Mat &_dY, const Mat &_dX, const Mat &_sstmag, Mat &thinnedf)
+thinfronts(const Mat &_frontsimg, const Mat &_dY, const Mat &_dX, const Mat &_sstmag, const Mat &_spt, Mat &thinnedf)
 {
 	CHECKMAT(_frontsimg, CV_8SC1);
 	CHECKMAT(_dX, CV_32FC1);
 	CHECKMAT(_dY, CV_32FC1);
 	CHECKMAT(_sstmag, CV_32FC1);
+	CHECKMAT(_spt, CV_8UC1);
 	
 	char *frontsimg = (char*)_frontsimg.data;
 	float *dX = (float*)_dX.data;
 	float *dY = (float*)_dY.data;
 	float *sstmag = (float*)_sstmag.data;
+	uchar *spt = _spt.data;
 	
 	thinnedf = _frontsimg.clone();
 	
 	int i = 0;
 	for(int y = 0; y < _frontsimg.rows; y++){
 		for(int x = 0; x < _frontsimg.cols; x++){
-			if(frontsimg[i] == FRONT_OK){
+			if((spt[i]&MaskCloud) == MaskCloudClear
+			&& (frontsimg[i] == FRONT_OK || frontsimg[i] == FRONT_BIG)){
 				double dy = dY[i] / sstmag[i];
 				double dx = dX[i] / sstmag[i];
 
@@ -1113,7 +1159,8 @@ thinfronts(const Mat &_frontsimg, const Mat &_dY, const Mat &_dX, const Mat &_ss
 					//	thinnedf.at<char>(yy, xx) = FRONT_THIN;
 					//}
 				}
-				if(_frontsimg.at<char>(maxy, maxx) == FRONT_OK){
+				if(_frontsimg.at<char>(maxy, maxx) == FRONT_OK
+				|| _frontsimg.at<char>(maxy, maxx) == FRONT_BIG){
 					thinnedf.at<char>(maxy, maxx) = FRONT_THIN;
 				}
 			}
@@ -1557,7 +1604,7 @@ verifyclusters(const Mat &_labels, int start, int nlabels, const Mat &stats,
 //
 static void
 getspt(const Resample &r, const Mat &_acspo, const Mat &_clust,
-	const Mat &_adjclust, const Mat &_fronts, const Mat &m15, const Mat &delta, Mat &_spt)
+	const Mat &_adjclust, const Mat &_fronts, const Mat &m15, const Mat &delta, int frontvalue, Mat &_spt)
 {
 	Mat _labels, stats, centoids, _acloud, _mask;
 	float *acloud;
@@ -1583,7 +1630,7 @@ getspt(const Resample &r, const Mat &_acspo, const Mat &_clust,
 	spt = _spt.data;
 	for(i = 0; i < (int)_acspo.total(); i++){
 		spt[i] = acspo[i] >> MaskCloudOffset;
-		if(fronts[i] == FRONT_OK)
+		if(fronts[i] == frontvalue)
 			spt[i] |= 0x04;
 	}
 	
@@ -1842,9 +1889,7 @@ SAVENC(glabelsnn);
 		
 		verifyfronts(frontsimg, m15, delta, omega, dY, dX, sstmag, sstanom, glabelsnn, acspo, fronts);
 		updatefrontsimg(fronts, frontsimg);
-		thinfronts(frontsimg, dY, dX, sstmag, thinnedf);
 		findadjacent2(fronts, nclust, glabelsnn, adjclust);
-SAVENC(thinnedf);
 	}else{
 		findadjacent(sst, dY, dX, sstmag, sstanom1, delta, m15, m16, nclust, glabelsnn, acspo, frontsimg, adjclust);
 	}
@@ -1852,14 +1897,26 @@ SAVENC(frontsimg);
 SAVENC(adjclust);
 
 	logprintf("creating spt mask...\n");
-	getspt(r, acspo, glabelsnn, adjclust, frontsimg, m15, delta, spt);
+	getspt(r, acspo, glabelsnn, adjclust, frontsimg, m15, delta, FRONT_OK, spt);
 SAVENC(spt);
 
+	// TODO: this is temporary
+	//Mat thinnedf;
+	//thinfronts(frontsimg, dY, dX, sstmag, spt, thinnedf);
+	//getspt(r, acspo, glabelsnn, adjclust, thinnedf, m15, delta, FRONT_THIN, spt);
+
 	logprintf("saving spt mask...\n");
-	Mat spt1 = resample_unsort(r.sind, spt);
-	writespt(ncid, spt1);
-	Mat acspo1 = resample_unsort(r.sind, acspo);
-	diffcloudmask(acspo1, spt1, diff);
+	if(true){
+		Mat spt1 = resample_unsort(r.sind, spt);
+		writespt(ncid, spt1);
+		Mat acspo1 = resample_unsort(r.sind, acspo);
+		diffcloudmask(acspo1, spt1, diff);
+	}else{
+		writespt(ncid, spt);
+		writevar(ncid, "sst_regression", sst);
+		writevar(ncid, "acspo_mask", acspo);
+		diffcloudmask(acspo, spt, diff);
+	}
 SAVENC(diff);
 
 	if(false){
