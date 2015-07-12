@@ -695,6 +695,90 @@ writespt(int ncid, const Mat &spt)
 		ncfatal(n, "nc_putvar_uchar failed");
 }
 
+nc_type
+cv2nctype(int cvtype)
+{
+	nc_type t;
+
+	switch(cvtype){
+	default:
+		t = NC_NAT;	// not a type
+		break;
+	case CV_32FC1:
+		t = NC_FLOAT;
+		break;
+	case CV_8UC1:
+		t = NC_UBYTE;
+		break;
+	}
+	return t;
+}
+
+static void
+createvar(int ncid, const char *varname, const Mat &data)
+{
+	int i, n, varid, ndims, dimids[2];
+	nc_type xtype;
+	size_t len;
+	
+	CV_Assert(data.isContinuous());
+
+	// It's not possible to delete a NetCDF variable, so attempt to use
+	// the variable if it already exists. Create the variable if it does not exist.
+	n = nc_inq_varid(ncid, varname, &varid);
+	if(n != NC_NOERR){
+		const char varunits[] = "none";
+		const char vardescr[] = "";
+
+		n = nc_inq_dimid(ncid, "scan_lines_along_track", &dimids[0]);
+		if(n != NC_NOERR)
+			ncfatal(n, "nc_inq_dimid failed");
+
+		n = nc_inq_dimid(ncid, "pixels_across_track", &dimids[1]);
+		if(n != NC_NOERR)
+			ncfatal(n, "nc_inq_dimid failed");
+		
+		xtype = cv2nctype(data.type());
+		if(xtype == NC_NAT){
+			eprintf("unsupported type %s\n", type2str(data.type()));
+		}
+		n = nc_def_var(ncid, varname, xtype, nelem(dimids), dimids, &varid);
+		if(n != NC_NOERR)
+			ncfatal(n, "nc_def_var failed");
+		n = nc_def_var_deflate(ncid, varid, 0, 1, 1);
+		if(n != NC_NOERR)
+			ncfatal(n, "setting deflate parameters failed");
+		
+		n = nc_put_att_text(ncid, varid, "UNITS", nelem(varunits)-1, varunits);
+		if(n != NC_NOERR)
+			ncfatal(n, "setting attribute UNITS failed");
+		n = nc_put_att_text(ncid, varid, "Description", nelem(vardescr)-1, vardescr);
+		if(n != NC_NOERR)
+			ncfatal(n, "setting attribute Description failed");
+	}
+	
+	// Varify that the netcdf variable has correct type and dimensions.
+	n = nc_inq_var(ncid, varid, NULL, &xtype, &ndims, dimids, NULL);
+	if(n != NC_NOERR)
+		ncfatal(n, "nc_inq_var failed");
+	if(cv2nctype(data.type()) != xtype)
+		eprintf("invalid variable type %d\n", xtype);
+	if(ndims != 2)
+		eprintf("variable dims is %d, want 2\n", ndims);
+	for(i = 0; i < 2; i++){
+		n = nc_inq_dimlen(ncid, dimids[i], &len);
+		if(n != NC_NOERR)
+			ncfatal(n, "nc_inq_dimlen failed");
+		if(len != (size_t)data.size[i])
+			eprintf("dimension %d is %d, want %d\n", i, len, data.size[i]);
+	}
+	
+	// Write data into netcdf variable.
+	n = nc_put_var(ncid, varid, data.data);
+	if(n != NC_NOERR)
+		ncfatal(n, "nc_put_var failed");
+}
+
 static void
 writevar(int ncid, const char *varname, const Mat &data)
 {
@@ -702,6 +786,8 @@ writevar(int ncid, const char *varname, const Mat &data)
 	nc_type xtype;
 	size_t len;
 	
+	CV_Assert(data.isContinuous());
+
 	n = nc_inq_varid(ncid, varname, &varid);
 	if(n != NC_NOERR)
 		ncfatal(n, "nc_inq_varid failed");
@@ -713,6 +799,7 @@ writevar(int ncid, const char *varname, const Mat &data)
 	switch(xtype){
 	default:
 		eprintf("invalid variable type %d\n", xtype);
+		break;
 	case NC_UBYTE:
 		if(data.type() != CV_8UC1)
 			eprintf("invalid Mat type %s", type2str(data.type()));
@@ -735,7 +822,7 @@ writevar(int ncid, const char *varname, const Mat &data)
 	// Write data into netcdf variable.
 	n = nc_put_var(ncid, varid, data.data);
 	if(n != NC_NOERR)
-		ncfatal(n, "nc_putvar_uchar failed");
+		ncfatal(n, "nc_put_var failed");
 }
 
 // Find thermal fronts.
@@ -1918,6 +2005,13 @@ SAVENC(spt);
 		diffcloudmask(acspo, spt, diff);
 	}
 SAVENC(diff);
+
+	if(false){
+		// TODO: this is temporary
+		Mat anom = sst - cmc;
+		Mat anom1 = resample_unsort(r.sind, anom);
+		createvar(ncid, "sst_anomaly", anom1);
+	}
 
 	if(false){
 		logprintf("saving diff image as diff.png\n");
