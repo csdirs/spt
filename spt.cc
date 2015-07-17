@@ -1153,17 +1153,17 @@ verifyfronts(Mat &_frontsimg, const Mat &_m15, const Mat &_delta, const Mat &_om
 		double ddiff = fabs(meann(leftdelta, f.leftind.size())
 			+ meann(rightdelta, f.rightind.size())
 			-2*meann(frontdelta, f.ind.size()));
-		if(ddiff >= 0.04){
-			continue;
-		}
+//		if(ddiff >= 0.04){
+//			continue;
+//		}
 
 		// Reject front based on correlation coefficient at the front.
 		setvalues(f.ind, frontm15, m15);
 		setvalues(f.ind, frontomega, omega);
-		if(corrcoef(frontm15, frontdelta, f.ind.size()) <= 0
-		|| corrcoef(frontomega, frontdelta, f.ind.size()) >= 0){
-			continue;
-		}
+//		if(corrcoef(frontm15, frontdelta, f.ind.size()) <= 0
+//		|| corrcoef(frontomega, frontdelta, f.ind.size()) >= 0){
+//			continue;
+//		}
 		
 		f.accept = true;
 	}
@@ -1822,6 +1822,34 @@ bilateral(const Mat &_src, const Mat &_easyclouds, Mat &_dst, double high, doubl
 	}
 }
 
+// Bilateral filter wrapper.
+static void
+magbilateral(const Mat &_src, Mat &_dst, double high, double sigmacolor, double sigmaspace)
+{
+	int i;
+	Mat _tmp;
+	float *src, *tmp;
+
+	CHECKMAT(_src, CV_32FC1);
+	_tmp = _src.clone();
+	
+	src = (float*)_src.data;
+	tmp = (float*)_tmp.data;
+	
+	for(i = 0; i < (int)_src.total(); i++){
+		if(isnan(src[i])){
+			tmp[i] = 0;
+		}else if(src[i] > high){
+			tmp[i] = high;
+		}
+	}
+	// TODO: check if OpenCV's bilateralFilter is fast enough for us
+	// and can replace this function.
+	cv_extend::bilateralFilter(_tmp, _dst, sigmacolor, sigmaspace);
+
+	CHECKMAT(_dst, CV_32FC1);
+}
+
 // Find the zero crossings of an image (the edges between negative and positive
 // values of source image).
 // 
@@ -1875,6 +1903,36 @@ groweasyclouds(Mat &easyclouds, const Mat &deltarange)
 	for(int i = 0; i < 10; i++){
 		dilate(easyclouds, dil, selem);
 		easyclouds |= dil & bigrange;
+	}
+}
+
+void
+adaptivethreshold(const Mat &_src, float low, float high, int winsize, double rat, Mat &_dst)
+{
+	Mat _B;
+	
+	CHECKMAT(_src, CV_32FC1);
+	Mat _tmp = _src.clone();
+	float *tmp = (float*)_tmp.data;
+	
+	for(int i = 0; i < (int)_tmp.total(); i++){
+		if(isnan(tmp[i]) || tmp[i] < low)
+			tmp[i] = 0;
+		else if(tmp[i] > high)
+			tmp[i] = high;
+	}
+if(DEBUG) savenc("atsrc.nc", _tmp);
+	
+	nanblur(_tmp, _B, winsize);
+	CHECKMAT(_B, CV_32FC1);
+	_dst.create(_src.size(), CV_8UC1);
+if(DEBUG) savenc("atblur.nc", _B);
+	
+	float *B = (float*)_B.data;
+	uchar *dst = _dst.data;
+	
+	for(int i = 0; i < (int)_tmp.total(); i++){
+		dst[i] = tmp[i] <= B[i]*rat ? 0 : 255;
 	}
 }
 
@@ -1936,10 +1994,23 @@ SAVENC(deltarange);
 SAVENC(lam2);
 
 	logprintf("computing easyclouds...\n");
+	Mat newstdf, newmedf;
 	medianBlur(sst, medf, 5);
 	stdfilter(sst-medf, stdf, 7);
+	medianBlur(sstmag, newmedf, 5);
+	nanblur(abs(sstmag-newmedf), newstdf, 11);
 	//nanblur(sst, blurf, 7);
-	Mat easyclouds = (sst < SST_LOW) | (stdf > STD_THRESH);
+
+	Mat sstmagbil, stdfbil, stdfthr;
+	//magbilateral(sstmag, sstmagbil, 1, 0.3, 200);
+	//magbilateral(stdf, stdfbil, 1, 0.5, 200);
+	adaptivethreshold(newstdf, 0.05, 0.3, 200, 0.9, stdfthr);
+//SAVENC(sstmagbil);
+//SAVENC(stdfbil);
+SAVENC(stdfthr);
+
+	Mat easyclouds = (sst < SST_LOW) | (stdf > STD_THRESH) | stdfthr;
+	//Mat easyclouds = (sst < SST_LOW) | (stdf > STD_THRESH);
 		//| (deltarange > 0.5);
 		//| (abs(sst - blurf) > EDGE_THRESH);
 	groweasyclouds(easyclouds, deltarange);
@@ -1947,6 +2018,7 @@ SAVENC(lam2);
 	//	& (stdf < STD_THRESH) & (lam2 < LAM2_THRESH);
 SAVENC(medf);
 SAVENC(stdf);
+SAVENC(newstdf);
 SAVENC(easyclouds);
 	
 	Mat sstbil1;
